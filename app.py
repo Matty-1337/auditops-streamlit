@@ -166,15 +166,10 @@ def show_login_page():
                             # Shouldn't happen, but handle gracefully
                             st.error(error_msg)
     
-    # Optional: Forgot password button and reset password link
+    # Optional: Forgot password button
     st.markdown("---")
-    col1, col2 = st.columns(2)
-    with col1:
-        if st.button("Forgot Password?", use_container_width=True):
-            show_forgot_password()
-    with col2:
-        # Link to reset password page (accessible via sidebar or direct navigation)
-        st.info("💡 **If you clicked a reset link**, go to **Reset Password** page from the sidebar.")
+    if st.button("Forgot Password?", use_container_width=True):
+        show_forgot_password()
     
     # Auth debug accordion
     with st.expander("Auth debug", expanded=False):
