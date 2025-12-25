@@ -265,30 +265,29 @@ def login(email: str, password: str) -> dict:
 
 def logout():
     """Log out current user and clear session."""
-    import streamlit.components.v1 as components
-
     try:
         client = get_client(service_role=False)
         client.auth.sign_out()
     except Exception:
         pass
 
-    # Clear localStorage tokens
-    components.html("""
+    # Clear localStorage tokens using st.markdown (more reliable)
+    st.markdown("""
         <script>
         (function() {
             try {
                 localStorage.removeItem("auditops_at");
                 localStorage.removeItem("auditops_rt");
+                console.log("[AuditOps] Cleared tokens from localStorage on logout");
             } catch(e) {
-                console.error("Failed to clear tokens from localStorage:", e);
+                console.error("[AuditOps] Failed to clear tokens:", e);
             }
         })();
         </script>
-    """, height=0)
+    """, unsafe_allow_html=True)
 
     # Clear session state
-    for key in ["auth_user", "auth_session", "user_profile", "supabase_session"]:
+    for key in ["auth_user", "auth_session", "user_profile", "supabase_session", "restore_attempted", "restore_succeeded"]:
         if key in st.session_state:
             del st.session_state[key]
 

@@ -224,22 +224,21 @@ def show_login_page():
                 with st.spinner("Logging in..."):
                     from src.auth import login_with_password
                     import logging
+                    import json
                     client = get_client(service_role=False)
                     ok, err = login_with_password(client, email, password)
 
                     if ok:
                         # CRITICAL: Store tokens in localStorage for refresh persistence
-                        # This MUST happen before st.rerun()
                         try:
                             session = client.auth.get_session()
-                            logging.info(f"[AuditOps] Login successful, retrieving session...")
+                            logging.info("[AuditOps] Login successful, getting session...")
 
                             if not session:
-                                logging.error("[AuditOps] Login succeeded but get_session() returned None!")
-                                st.error("Login succeeded but session could not be retrieved. Please try again.")
-                                # Don't rerun - show error
+                                logging.error("[AuditOps] get_session() returned None!")
+                                st.error("Login succeeded but session not found. Please try again.")
                             else:
-                                # Extract tokens (handle both object and dict formats)
+                                # Extract tokens
                                 access_token = None
                                 refresh_token = None
 
@@ -254,39 +253,44 @@ def show_login_page():
                                     refresh_token = session.get('refresh_token')
 
                                 if not access_token or not refresh_token:
-                                    logging.error(f"[AuditOps] Tokens missing! access_token: {bool(access_token)}, refresh_token: {bool(refresh_token)}")
-                                    st.error("Login succeeded but tokens are missing. Please try again.")
-                                    # Don't rerun - show error
+                                    logging.error(f"[AuditOps] Tokens missing! at={bool(access_token)} rt={bool(refresh_token)}")
+                                    st.error("Login succeeded but tokens missing. Please try again.")
                                 else:
-                                    logging.info("[AuditOps] Tokens extracted successfully, storing to localStorage...")
+                                    logging.info("[AuditOps] Tokens extracted, storing to localStorage...")
 
-                                    # Store tokens to localStorage
-                                    # IMPORTANT: Escape tokens properly for JS (replace quotes)
-                                    access_token_safe = access_token.replace('\\', '\\\\').replace('"', '\\"').replace("'", "\\'")
-                                    refresh_token_safe = refresh_token.replace('\\', '\\\\').replace('"', '\\"').replace("'", "\\'")
+                                    # Use JSON encoding to safely pass tokens to JavaScript
+                                    # This handles all special characters properly
+                                    access_token_json = json.dumps(access_token)
+                                    refresh_token_json = json.dumps(refresh_token)
 
-                                    components.html(f"""
+                                    # Store tokens using st.markdown (more reliable than components.html)
+                                    st.markdown(f"""
                                         <script>
                                         (function() {{
                                             try {{
-                                                localStorage.setItem("auditops_at", "{access_token_safe}");
-                                                localStorage.setItem("auditops_rt", "{refresh_token_safe}");
-                                                console.log("[AuditOps] Tokens stored to localStorage successfully");
+                                                const at = {access_token_json};
+                                                const rt = {refresh_token_json};
+                                                localStorage.setItem("auditops_at", at);
+                                                localStorage.setItem("auditops_rt", rt);
+                                                console.log("[AuditOps] Tokens stored to localStorage");
                                             }} catch(e) {{
-                                                console.error("[AuditOps] Failed to store tokens to localStorage:", e);
+                                                console.error("[AuditOps] Failed to store tokens:", e);
                                             }}
                                         }})();
                                         </script>
-                                    """, height=0)
+                                    """, unsafe_allow_html=True)
 
                                     st.success("Login successful!")
-                                    logging.info("[AuditOps] Triggering rerun after login...")
+                                    logging.info("[AuditOps] Rerunning after login...")
+
+                                    # Small delay to ensure JS executes
+                                    import time
+                                    time.sleep(0.1)
                                     st.rerun()
 
                         except Exception as e:
                             logging.error(f"[AuditOps] Token storage exception: {str(e)[:200]}")
                             st.error(f"Login succeeded but token storage failed: {str(e)[:100]}")
-                            # Don't rerun - show error
                     else:
                         st.error(err if err else "Login failed. Please try again.")
     
@@ -474,55 +478,60 @@ def main():
         st.stop()
         return
 
-    # STEP 1: CRITICAL - Restore tokens from localStorage on app load (MUST BE FIRST)
-    # This JavaScript runs BEFORE any auth checks and moves tokens from localStorage to query params
-    query_params = dict(st.query_params)
-    has_auditops_restore = "auditops_restore" in query_params
+    # STEP 1: CRITICAL - Always inject localStorage restore script at the VERY TOP
+    # Use st.markdown for more reliable execution than components.html
+    # This MUST run before any auth checks
+    st.markdown("""
+        <script>
+        (function() {
+            try {
+                const currentUrl = new URL(window.location.href);
+                const params = currentUrl.searchParams;
 
-    if not has_auditops_restore and "restore_js_ran" not in st.session_state:
-        # First time loading - inject JS to check localStorage and redirect if tokens exist
-        components.html("""
-            <script>
-            (function() {
-                try {
-                    const access_token = localStorage.getItem("auditops_at");
-                    const refresh_token = localStorage.getItem("auditops_rt");
-                    const currentParams = new URLSearchParams(window.location.search);
-
-                    // Only redirect if we have tokens AND they're not already in query params
-                    if (access_token && refresh_token && !currentParams.has('auditops_restore')) {
-                        console.log("[AuditOps] Restoring tokens from localStorage...");
-                        currentParams.set('access_token', access_token);
-                        currentParams.set('refresh_token', refresh_token);
-                        currentParams.set('auditops_restore', '1');
-
-                        const newUrl = window.location.pathname + '?' + currentParams.toString();
-                        window.location.replace(newUrl);
-                    } else {
-                        console.log("[AuditOps] No tokens in localStorage or already in query params");
-                    }
-                } catch(e) {
-                    console.error("[AuditOps] Failed to restore tokens:", e);
+                // If we already processed restore, don't do it again
+                if (params.has('auditops_restore')) {
+                    console.log("[AuditOps] Already processed restore, skipping");
+                    return;
                 }
-            })();
-            </script>
-        """, height=0)
-        st.session_state.restore_js_ran = True
-        # Wait for next rerun (after JS redirect if needed)
-        st.stop()
-        return
 
-    # STEP 2: If we have auditops_restore flag, consume tokens and restore session
-    if has_auditops_restore:
-        st.session_state.restore_attempted = True
-        access_token = query_params.get("access_token")
-        refresh_token = query_params.get("refresh_token")
-        has_recovery_type = query_params.get("type") in ["recovery", "invite"]
-        has_code = "code" in query_params
+                // Check localStorage for tokens
+                const access_token = localStorage.getItem("auditops_at");
+                const refresh_token = localStorage.getItem("auditops_rt");
 
-        # Only process if this is our restore flow (not recovery/invite)
-        if access_token and refresh_token and not has_recovery_type and not has_code:
-            logging.info("[AuditOps] Consuming tokens from query params to restore session...")
+                if (access_token && refresh_token) {
+                    console.log("[AuditOps] Tokens found in localStorage, redirecting to restore...");
+
+                    // Add tokens and restore flag to URL
+                    params.set('access_token', access_token);
+                    params.set('refresh_token', refresh_token);
+                    params.set('auditops_restore', '1');
+
+                    // Redirect immediately
+                    window.location.href = currentUrl.pathname + '?' + params.toString();
+                } else {
+                    console.log("[AuditOps] No tokens in localStorage");
+                }
+            } catch(e) {
+                console.error("[AuditOps] localStorage restore error:", e);
+            }
+        })();
+        </script>
+    """, unsafe_allow_html=True)
+
+    # STEP 2: Check if we have tokens in query params from the restore redirect
+    query_params = dict(st.query_params)
+    has_auditops_restore = query_params.get("auditops_restore") == "1"
+    access_token = query_params.get("access_token")
+    refresh_token = query_params.get("refresh_token")
+    has_recovery_type = query_params.get("type") in ["recovery", "invite"]
+    has_code = "code" in query_params
+
+    # STEP 3: If this is a restore flow (not recovery/invite), consume tokens and restore session
+    if has_auditops_restore and access_token and refresh_token and not has_recovery_type and not has_code:
+        # Mark that we attempted restore
+        if "restore_attempted" not in st.session_state:
+            st.session_state.restore_attempted = True
+            logging.info("[AuditOps] Processing token restore from localStorage...")
 
             try:
                 client = get_client(service_role=False)
@@ -539,14 +548,14 @@ def main():
                         "token_type": "bearer"
                     }
                     client.auth.set_session(session_dict)
-                    logging.info("[AuditOps] set_session() called with dict format (fallback)")
+                    logging.info("[AuditOps] set_session() with dict fallback")
 
                 # Verify session is valid
                 user_response = client.auth.get_user()
                 user = user_response.user if hasattr(user_response, "user") else user_response
 
                 if user and hasattr(user, "id"):
-                    logging.info(f"[AuditOps] Session restored successfully for user_id: {user.id[:8]}...")
+                    logging.info(f"[AuditOps] Session restored for user {user.id[:8]}...")
 
                     # Store in session_state
                     st.session_state.auth_user = user
@@ -562,52 +571,49 @@ def main():
                     profile = load_user_profile(user.id, client=client)
                     if profile:
                         st.session_state.user_profile = profile
-                        logging.info(f"[AuditOps] Profile loaded for user_id: {user.id[:8]}...")
 
                     st.session_state.restore_succeeded = True
+                    logging.info("[AuditOps] Restore succeeded, clearing URL params...")
 
-                    # CRITICAL: Clear query params to remove tokens from URL
+                    # Clear query params and rerun
                     st.query_params.clear()
-                    logging.info("[AuditOps] Query params cleared, triggering rerun...")
                     st.rerun()
                 else:
-                    # Session restoration failed
-                    logging.warning("[AuditOps] Session restoration failed - invalid user")
+                    # Invalid session
+                    logging.warning("[AuditOps] Restore failed - invalid user")
                     st.session_state.restore_succeeded = False
-                    # Clear localStorage
-                    components.html("""
+
+                    # Clear bad tokens from localStorage
+                    st.markdown("""
                         <script>
                         localStorage.removeItem("auditops_at");
                         localStorage.removeItem("auditops_rt");
-                        console.log("[AuditOps] Cleared invalid tokens from localStorage");
+                        console.log("[AuditOps] Cleared invalid tokens");
                         </script>
-                    """, height=0)
+                    """, unsafe_allow_html=True)
+
                     st.query_params.clear()
                     st.rerun()
 
             except Exception as e:
-                # Session restoration failed
-                logging.error(f"[AuditOps] Session restoration exception: {str(e)[:200]}")
+                # Restore failed
+                logging.error(f"[AuditOps] Restore exception: {str(e)[:200]}")
                 st.session_state.restore_succeeded = False
-                # Clear localStorage
-                components.html("""
+
+                # Clear tokens
+                st.markdown("""
                     <script>
                     localStorage.removeItem("auditops_at");
                     localStorage.removeItem("auditops_rt");
-                    console.log("[AuditOps] Cleared tokens from localStorage due to error");
+                    console.log("[AuditOps] Cleared tokens after error");
                     </script>
-                """, height=0)
+                """, unsafe_allow_html=True)
+
                 st.query_params.clear()
                 st.rerun()
 
-    # STEP 3: Check for recovery/invite flows (password reset, etc.)
-    query_params = dict(st.query_params)
-    has_code = "code" in query_params and query_params.get("code")
-    has_access_token = "access_token" in query_params and query_params.get("access_token")
-    has_refresh_token = "refresh_token" in query_params and query_params.get("refresh_token")
-    has_recovery_type = query_params.get("type") in ["recovery", "invite"]
-
-    if has_code or (has_access_token and has_refresh_token and not has_auditops_restore) or has_recovery_type:
+    # STEP 4: Check for recovery/invite flows (password reset, etc.)
+    if has_code or (access_token and refresh_token and not has_auditops_restore) or has_recovery_type:
         # Recovery/invite flow - let password reset page handle it
         st.stop()
         return
