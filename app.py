@@ -7,7 +7,7 @@ import streamlit.components.v1 as components
 import os
 from src.auth import (
     login, logout, is_authenticated, get_current_user, get_current_profile, 
-    require_authentication, authenticate_with_tokens, reset_password,
+    require_authentication, authenticate_with_tokens,
     exchange_code_for_session, load_user_profile
 )
 from src.supabase_client import get_client
@@ -114,37 +114,8 @@ components.html("""
 """, height=0)
 
 
-def show_recovery_page(access_token: str, refresh_token: str):
-    """Display password recovery/reset page."""
-    st.markdown('<div class="login-container">', unsafe_allow_html=True)
-    st.markdown('<h1 class="main-header">AuditOps</h1>', unsafe_allow_html=True)
-    st.markdown("### Set New Password")
-    st.markdown("---")
-    st.info("Please enter your new password below.")
-    
-    with st.form("recovery_form"):
-        new_password = st.text_input("New Password", type="password", placeholder="Enter your new password")
-        confirm_password = st.text_input("Confirm Password", type="password", placeholder="Confirm your new password")
-        submit = st.form_submit_button("Set New Password", type="primary", use_container_width=True)
-        
-        if submit:
-            if not new_password or not confirm_password:
-                st.error("Please enter and confirm your new password.")
-            elif new_password != confirm_password:
-                st.error("Passwords do not match. Please try again.")
-            elif len(new_password) < 6:
-                st.error("Password must be at least 6 characters long.")
-            else:
-                with st.spinner("Setting new password..."):
-                    if reset_password(new_password, access_token, refresh_token):
-                        st.success("Password updated successfully! Redirecting...")
-                        # Clear query params and rerun
-                        st.query_params.clear()
-                        st.rerun()
-                    else:
-                        st.error("Failed to update password. Please try again.")
-    
-    st.markdown("</div>", unsafe_allow_html=True)
+# DEPRECATED: show_recovery_page() removed - password reset now handled by pages/00_Reset_Password.py
+# This function is no longer used but kept for backward compatibility
 
 
 def show_login_page():
@@ -195,10 +166,15 @@ def show_login_page():
                             # Shouldn't happen, but handle gracefully
                             st.error(error_msg)
     
-    # Optional: Forgot password button
+    # Optional: Forgot password button and reset password link
     st.markdown("---")
-    if st.button("Forgot Password?", use_container_width=True):
-        show_forgot_password()
+    col1, col2 = st.columns(2)
+    with col1:
+        if st.button("Forgot Password?", use_container_width=True):
+            show_forgot_password()
+    with col2:
+        # Link to reset password page (accessible via sidebar or direct navigation)
+        st.info("💡 **If you clicked a reset link**, go to **Reset Password** page from the sidebar.")
     
     # Auth debug accordion
     with st.expander("Auth debug", expanded=False):
@@ -270,9 +246,21 @@ def show_forgot_password():
                     # Use Streamlit Cloud URL or construct from current request
                     app_url = "https://auditops.streamlit.app"  # Update if different
                     
+                    # Supabase Dashboard Configuration Required (Authentication → URL Configuration):
+                    # - Site URL: https://auditops.streamlit.app
+                    #   → This is the base URL where Supabase will redirect after password reset
+                    # - Redirect URLs (Additional Redirect URLs):
+                    #   → Add: https://auditops.streamlit.app/*
+                    #   → This allows Supabase to redirect to any path in the Streamlit app
+                    # 
+                    # When user clicks password reset link in email:
+                    # 1. Supabase redirects to: https://auditops.streamlit.app/#access_token=...&refresh_token=...&type=recovery
+                    # 2. JavaScript in app.py converts fragment to query params
+                    # 3. Recovery tokens are detected and user should navigate to Reset Password page (pages/00_Reset_Password.py)
+                    #    via sidebar or the page will detect tokens in query params automatically
                     client.auth.reset_password_for_email(
                         email,
-                        options={"redirect_to": f"{app_url}"}
+                        options={"redirect_to": app_url}
                     )
                     st.success(f"✅ Password reset link sent to {email}. Please check your email.")
                     st.info("💡 Note: You can also contact an administrator to reset your password.")
@@ -457,18 +445,11 @@ def main():
         except Exception:
             pass  # Continue even if rehydration fails
     
-    # DEPRIORITIZED: Handle password reset callback (from "Forgot Password" email)
-    # This is optional - password reset emails may redirect here
-    # Primary auth path is password login, not magic links
-    access_token = query_params.get("access_token")
-    refresh_token = query_params.get("refresh_token")
-    auth_type = query_params.get("type")
-    
-    # Only handle recovery/password reset callbacks (not magic link login)
-    if access_token and refresh_token and auth_type == "recovery" and not is_authenticated():
-        # Password reset callback - show password reset form
-        show_recovery_page(access_token, refresh_token)
-        return
+    # Handle password reset callback redirect
+    # Note: Password reset flow now uses dedicated page (pages/00_Reset_Password.py)
+    # Recovery tokens are handled by the dedicated reset password page
+    # If recovery tokens are detected here, we keep them in query params so the page can handle them
+    # Users should navigate to the Reset Password page from the sidebar or login page
     
     # Note: Magic link login and PKCE flows are deprecated in favor of password-first auth
     # These are kept for backward compatibility but not the primary path
