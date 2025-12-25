@@ -135,12 +135,12 @@ def show_login_page():
         email = st.text_input("Email", placeholder="your.email@example.com")
         password = st.text_input("Password", type="password", placeholder="Enter your password")
         submit = st.form_submit_button("Login", type="primary", use_container_width=True)
-        
+
         if submit:
             # Clear any stale error messages from previous attempts
             if "last_login_error" in st.session_state:
                 del st.session_state.last_login_error
-            
+
             if not email or not password:
                 st.error("Please enter both email and password.")
             else:
@@ -148,9 +148,32 @@ def show_login_page():
                     from src.auth import login_with_password
                     client = get_client(service_role=False)
                     ok, err = login_with_password(client, email, password)
-                    
+
                     if ok:
                         st.success("Login successful!")
+                        # Store tokens in localStorage for refresh persistence
+                        try:
+                            session = client.auth.get_session()
+                            if session:
+                                access_token = getattr(session, 'access_token', None) or (session.get('access_token') if isinstance(session, dict) else None)
+                                refresh_token = getattr(session, 'refresh_token', None) or (session.get('refresh_token') if isinstance(session, dict) else None)
+
+                                if access_token and refresh_token:
+                                    components.html(f"""
+                                        <script>
+                                        (function() {{
+                                            try {{
+                                                localStorage.setItem("auditops_at", "{access_token}");
+                                                localStorage.setItem("auditops_rt", "{refresh_token}");
+                                            }} catch(e) {{
+                                                console.error("Failed to store tokens:", e);
+                                            }}
+                                        }})();
+                                        </script>
+                                    """, height=0)
+                        except Exception:
+                            pass  # Continue even if token storage fails
+
                         st.rerun()
                     else:
                         st.error(err if err else "Login failed. Please try again.")
@@ -330,7 +353,38 @@ def main():
         st.error(f"⚠️ Configuration Error: {str(e)}")
         st.stop()
         return
-    
+
+    # CRITICAL: Restore tokens from localStorage on app load (for refresh persistence)
+    # This must run BEFORE checking authentication to rehydrate session
+    components.html("""
+        <script>
+        (function() {
+            try {
+                const access_token = localStorage.getItem("auditops_at");
+                const refresh_token = localStorage.getItem("auditops_rt");
+                const currentParams = new URLSearchParams(window.location.search);
+
+                // Only redirect if we have tokens AND they're not already in query params
+                // This prevents infinite redirect loops
+                if (access_token && refresh_token &&
+                    !currentParams.has('access_token') &&
+                    !currentParams.has('auditops_restore')) {
+                    // Add tokens to query params and set flag to prevent loop
+                    currentParams.set('access_token', access_token);
+                    currentParams.set('refresh_token', refresh_token);
+                    currentParams.set('auditops_restore', '1');
+
+                    // Redirect with tokens
+                    const newUrl = window.location.pathname + '?' + currentParams.toString();
+                    window.location.replace(newUrl);
+                }
+            } catch(e) {
+                console.error("Failed to restore tokens from localStorage:", e);
+            }
+        })();
+        </script>
+    """, height=0)
+
     # CRITICAL: Early routing guard - detect recovery/invite tokens BEFORE showing login
     # This prevents login UI from rendering during password reset flow
     query_params = dict(st.query_params)
@@ -338,16 +392,86 @@ def main():
     has_access_token = "access_token" in query_params and query_params.get("access_token")
     has_refresh_token = "refresh_token" in query_params and query_params.get("refresh_token")
     has_recovery_type = query_params.get("type") in ["recovery", "invite"]
-    
+    has_auditops_restore = "auditops_restore" in query_params
+
+    # CRITICAL: Restore session from localStorage tokens in query params
+    # This runs when user refreshes browser and tokens are restored from localStorage
+    if has_auditops_restore and has_access_token and has_refresh_token and not has_recovery_type:
+        import logging
+        access_token = query_params.get("access_token")
+        refresh_token = query_params.get("refresh_token")
+
+        try:
+            client = get_client(service_role=False)
+            # Set session using restored tokens
+            try:
+                client.auth.set_session(access_token, refresh_token)
+            except (TypeError, AttributeError):
+                # Fallback for older API versions
+                session_dict = {
+                    "access_token": access_token,
+                    "refresh_token": refresh_token,
+                    "token_type": "bearer"
+                }
+                client.auth.set_session(session_dict)
+
+            # Verify session is valid
+            user_response = client.auth.get_user()
+            user = user_response.user if hasattr(user_response, "user") else user_response
+
+            if user and hasattr(user, "id"):
+                # Store in session_state for persistence within this Streamlit session
+                st.session_state.auth_user = user
+                if hasattr(user_response, 'session') and user_response.session:
+                    st.session_state.auth_session = user_response.session
+
+                # Also persist using the persist_session helper
+                from src.supabase_client import persist_session
+                persist_session(client)
+
+                # Load user profile
+                from src.auth import load_user_profile
+                profile = load_user_profile(user.id, client=client)
+                if profile:
+                    st.session_state.user_profile = profile
+
+                logging.info(f"Session restored from localStorage for user_id: {user.id[:8]}...")
+
+                # CRITICAL: Clear query params to remove tokens from URL
+                st.query_params.clear()
+                st.rerun()
+            else:
+                # Session restoration failed - clear localStorage and continue to login
+                logging.warning("Session restoration failed - invalid user returned")
+                components.html("""
+                    <script>
+                    localStorage.removeItem("auditops_at");
+                    localStorage.removeItem("auditops_rt");
+                    </script>
+                """, height=0)
+                st.query_params.clear()
+                st.rerun()
+        except Exception as e:
+            # Session restoration failed - clear localStorage and continue to login
+            logging.error(f"Session restoration exception: {str(e)[:200]}")
+            components.html("""
+                <script>
+                localStorage.removeItem("auditops_at");
+                localStorage.removeItem("auditops_rt");
+                </script>
+            """, height=0)
+            st.query_params.clear()
+            st.rerun()
+
     # If recovery/invite tokens are present, let the reset password page handle it
     # Streamlit will automatically route to pages/00_Reset_Password.py when accessed
     # We just need to prevent the login UI from showing here
-    if has_code or (has_access_token and has_refresh_token) or has_recovery_type:
+    if has_code or (has_access_token and has_refresh_token and not has_auditops_restore) or has_recovery_type:
         # Recovery/invite flow detected - don't show login UI
         # The reset password page will handle the rest
         st.stop()
         return
-    
+
     # CRITICAL FIX: Rehydrate Supabase client session from st.session_state BEFORE checking auth
     # This ensures the client has the session even if it was lost between reruns
     # Note: get_client() now handles rehydration internally, but we verify here
