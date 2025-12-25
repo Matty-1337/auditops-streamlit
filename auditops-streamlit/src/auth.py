@@ -273,22 +273,23 @@ def logout():
     except Exception:
         pass
 
-    # Clear localStorage tokens
+    # Clear localStorage tokens using components.html() - st.markdown() doesn't execute scripts!
     components.html("""
         <script>
         (function() {
             try {
                 localStorage.removeItem("auditops_at");
                 localStorage.removeItem("auditops_rt");
+                console.log("[AuditOps] Cleared tokens from localStorage on logout");
             } catch(e) {
-                console.error("Failed to clear tokens from localStorage:", e);
+                console.error("[AuditOps] Failed to clear tokens:", e);
             }
         })();
         </script>
     """, height=0)
 
     # Clear session state
-    for key in ["auth_user", "auth_session", "user_profile", "supabase_session"]:
+    for key in ["auth_user", "auth_session", "user_profile", "supabase_session", "restore_attempted", "restore_succeeded"]:
         if key in st.session_state:
             del st.session_state[key]
 
