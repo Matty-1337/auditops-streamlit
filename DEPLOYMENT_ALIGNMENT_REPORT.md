@@ -278,6 +278,8 @@ These files are **NOT** used by Streamlit Cloud:
 3. ✅ **Verified Forgot Password UI** - Confirmed it exists in production entrypoint
 4. ✅ **Verified Reset Password page** - Confirmed it exists in `auditops-streamlit/pages/`
 5. ✅ **Created this report** - Documented deployment structure
+6. ✅ **Ported critical fixes from root** - See `DRIFT_SYNC_REPORT.md` for details
+7. ✅ **Archived root duplicate files** - Moved to `archive_root_app/` to prevent confusion
 
 ---
 
@@ -323,11 +325,12 @@ These files are **NOT** used by Streamlit Cloud:
 2. ✅ **Always edit files in `auditops-streamlit/`** directory
 3. ✅ **Check build marker** after each deployment to confirm latest code is running
 
-### Optional Cleanup (Future)
+### Cleanup Actions Completed
 
-1. Consider removing or archiving root `app.py`, `src/`, `pages/` to prevent confusion
-2. Add a README in root explaining the nested structure
-3. Add pre-commit hook or CI check to warn if editing root files
+1. ✅ **Archived root files** - Moved `app.py`, `src/`, `pages/`, `requirements.txt` to `archive_root_app/`
+2. ✅ **Added archive README** - `archive_root_app/README.md` explains why files are archived
+3. ✅ **Updated main README** - Added production structure warning at top
+4. ⚠️ **Optional:** Add pre-commit hook or CI check to warn if editing root files (future enhancement)
 
 ### Documentation Updates Needed
 
@@ -337,13 +340,61 @@ These files are **NOT** used by Streamlit Cloud:
 
 ---
 
-## 15. Commit Information
+## 15. Critical Fixes Ported from Root (2025-01-27)
 
-**Commit Hash:** `48d0a56` (previous) → `<new_hash>` (after fixes)  
+**See `DRIFT_SYNC_REPORT.md` for complete analysis.**
+
+### Files Updated in Production:
+
+1. **`auditops-streamlit/src/auth.py`** - Complete rewrite:
+   - ✅ Structured login return value (`{"ok", "auth_ok", "profile_ok", "error"}`)
+   - ✅ Explicit auth error handling (catches `sign_in_with_password` exceptions)
+   - ✅ Session setting after login (ensures client has session)
+   - ✅ Profile lookup using `user_id` (not `id`) - **CRITICAL FIX**
+   - ✅ `maybe_single()` instead of `single()` to avoid exceptions
+   - ✅ Client parameter for profile lookup (reuses authenticated client)
+   - ✅ `reset_password()` function added
+
+2. **`auditops-streamlit/src/supabase_client.py`** - Session rehydration:
+   - ✅ Rehydrates session from `st.session_state` on every `get_client()` call
+   - ✅ Checks if rehydration needed before doing it
+   - ✅ Handles both dict and object session formats
+
+3. **`auditops-streamlit/src/db.py`** - Column name fixes:
+   - ✅ `get_profile()` uses `.eq("user_id", user_id)` (not `id`)
+   - ✅ `update_profile()` uses `.eq("user_id", user_id)` (not `id`)
+   - ✅ Schema-agnostic health check (`.select("*")` instead of `.select("id")`)
+
+4. **`auditops-streamlit/app.py`** - Login handling and session management:
+   - ✅ Structured login result handling (shows only one error at a time)
+   - ✅ Session rehydration before auth check
+   - ✅ JavaScript fragment-to-query conversion (for password reset links)
+   - ✅ Graceful profile missing handling (doesn't logout immediately)
+
+5. **`auditops-streamlit/src/config.py`** - Documentation:
+   - ✅ Added comment about `validate_config()` only checking secrets existence
+
+### Files Archived:
+
+- `archive_root_app/app.py` - Old root entrypoint (archived)
+- `archive_root_app/src/` - Old root source (archived)
+- `archive_root_app/pages/` - Old root pages (archived)
+- `archive_root_app/requirements.txt` - Old root deps (archived)
+
+## 16. Commit Information
+
+**Commit Hash:** `48d0a56` (previous) → `<new_hash>` (after sync)  
 **Files Changed:**
-- `auditops-streamlit/app.py` - Added permanent build marker with Git SHA
+- `auditops-streamlit/app.py` - Added build marker, structured login handling, session rehydration, fragment conversion
+- `auditops-streamlit/src/auth.py` - Complete rewrite with structured results, `user_id` fix, `reset_password()`
+- `auditops-streamlit/src/supabase_client.py` - Added session rehydration
+- `auditops-streamlit/src/db.py` - Fixed column names (`user_id` instead of `id`)
+- `auditops-streamlit/src/config.py` - Added documentation comment
 - `auditops-streamlit/requirements.txt` - Added `requests>=2.31.0`
 - `DEPLOYMENT_ALIGNMENT_REPORT.md` - This report
+- `DRIFT_SYNC_REPORT.md` - Root vs nested comparison
+- `archive_root_app/` - Archived root duplicate files
+- `README.md` - Updated with production structure warning
 
 ---
 

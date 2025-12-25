@@ -2,6 +2,20 @@
 
 A comprehensive operations portal for auditors, administrators, and managers built with Streamlit and Supabase. This internal employee and client operations system provides role-based access control, time tracking, pay period management, approvals, and client data access.
 
+## ⚠️ IMPORTANT: Production Structure
+
+**Streamlit Cloud runs from the NESTED directory:** `auditops-streamlit/`
+
+**All production code lives in:**
+- `auditops-streamlit/app.py` - Main entrypoint (DO NOT edit root `app.py`)
+- `auditops-streamlit/src/` - Source code (DO NOT edit root `src/`)
+- `auditops-streamlit/pages/` - Streamlit pages (DO NOT edit root `pages/`)
+- `auditops-streamlit/requirements.txt` - Dependencies (DO NOT edit root `requirements.txt`)
+
+**Root-level files (`app.py`, `src/`, `pages/`, `requirements.txt`) are archived in `archive_root_app/` and are NOT used by production.**
+
+**See `DEPLOYMENT_ALIGNMENT_REPORT.md` for complete details on the deployment structure.**
+
 ## Features
 
 - **Authentication**: Secure login using Supabase Auth (email + password)
@@ -88,9 +102,13 @@ jwt_secret = "your-jwt-secret-here"  # Optional, for advanced token verification
 
 ### 6. Run Locally
 
+**For Production (Streamlit Cloud):**
 ```bash
+cd auditops-streamlit
 streamlit run app.py
 ```
+
+**Note:** If you have root-level files, they are archived and not used. Always run from `auditops-streamlit/` directory.
 
 The app will open in your browser at `http://localhost:8501`
 
@@ -100,16 +118,19 @@ The app will open in your browser at `http://localhost:8501`
 2. Go to [share.streamlit.io](https://share.streamlit.io)
 3. Click **New app**
 4. Connect your GitHub repository
-5. Set the main file path to `app.py`
+5. **Set the main file path to `auditops-streamlit/app.py`** (NOT root `app.py`)
 6. Add your secrets in the app settings (see step 5)
 7. Deploy!
+
+**Important:** Streamlit Cloud must be configured to use `auditops-streamlit/app.py` as the entrypoint.
 
 ## Project Structure
 
 ```
-auditops-streamlit/
-├── app.py                          # Main application entry point
-├── pages/                          # Streamlit multi-page app pages
+auditops-streamlit/                 # ⚠️ PRODUCTION CODE (Streamlit Cloud runs from here)
+├── app.py                          # Main application entry point (PRODUCTION)
+├── pages/                          # Streamlit multi-page app pages (PRODUCTION)
+│   ├── 00_Reset_Password.py        # Password reset page
 │   ├── 01_Auditor_Field_Mode.py   # Auditor: Check in/out
 │   ├── 02_Auditor_My_Pay.py       # Auditor: View pay history
 │   ├── 10_Admin_Approvals.py      # Manager/Admin: Approve shifts
@@ -117,7 +138,7 @@ auditops-streamlit/
 │   ├── 12_Admin_Clients.py        # Admin: Manage clients
 │   ├── 13_Admin_Secrets_Access_Log.py  # Admin: View access logs
 │   └── 99_Admin_Health_Check.py   # Admin: System health
-├── src/                            # Source modules
+├── src/                            # Source modules (PRODUCTION)
 │   ├── __init__.py
 │   ├── config.py                   # Configuration and secrets
 │   ├── supabase_client.py         # Supabase client initialization
@@ -126,11 +147,20 @@ auditops-streamlit/
 │   ├── storage.py                  # File storage helpers
 │   ├── utils.py                    # Utility functions
 │   └── pdf_statements.py           # PDF generation
+├── requirements.txt                # Python dependencies (PRODUCTION)
 ├── sql/
 │   └── schema.sql                  # Database schema
-├── requirements.txt                # Python dependencies
+├── archive_root_app/               # ⚠️ ARCHIVED (NOT USED IN PRODUCTION)
+│   ├── app.py                      # Old root entrypoint (archived)
+│   ├── src/                        # Old root source (archived)
+│   ├── pages/                      # Old root pages (archived)
+│   └── requirements.txt           # Old root deps (archived)
+├── DEPLOYMENT_ALIGNMENT_REPORT.md  # Deployment structure documentation
+├── DRIFT_SYNC_REPORT.md            # Root vs nested comparison report
 └── README.md                       # This file
 ```
+
+**⚠️ CRITICAL:** Always edit files in `auditops-streamlit/` for production changes. Root-level files are archived and ignored by Streamlit Cloud.
 
 ## Role Permissions
 
