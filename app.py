@@ -6,7 +6,7 @@ import streamlit as st
 import streamlit.components.v1 as components
 import os
 from src.auth import (
-    login, logout, is_authenticated, get_current_profile, 
+    login, logout, is_authenticated, get_current_user, get_current_profile, 
     require_authentication, authenticate_with_tokens, reset_password,
     exchange_code_for_session, load_user_profile
 )
@@ -226,10 +226,30 @@ def show_main_app():
     """Show main application with navigation."""
     profile = get_current_profile()
     if not profile:
-        st.error("User profile not found. Please contact an administrator.")
-        logout()
-        st.rerun()
-        return
+        # Profile not found - show warning but DO NOT logout
+        # User is authenticated, just missing profile data
+        # Try to reload profile if we have a user
+        user = get_current_user()
+        if user and hasattr(user, "id"):
+            import logging
+            logging.warning(f"Profile missing in session state, attempting reload | user_id: {user.id[:8]}...")
+            from src.auth import load_user_profile
+            profile = load_user_profile(user.id)
+            if profile:
+                st.session_state.user_profile = profile
+        
+        if not profile:
+            st.error("⚠️ User profile not found. Some features may be limited. Please contact an administrator.")
+            # Use fallback values for display
+            user = get_current_user()
+            user_name = user.email if user and hasattr(user, "email") else "User"
+            user_role = "UNKNOWN"
+        else:
+            user_name = profile.get("full_name", profile.get("email", "User"))
+            user_role = profile.get("role", "UNKNOWN")
+    else:
+        user_name = profile.get("full_name", profile.get("email", "User"))
+        user_role = profile.get("role", "UNKNOWN")
     
     user_name = profile.get("full_name", profile.get("email", "User"))
     user_role = profile.get("role", "UNKNOWN")

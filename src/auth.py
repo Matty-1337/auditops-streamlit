@@ -52,8 +52,22 @@ def login(email: str, password: str) -> dict | None:
                     "profile": profile
                 }
             else:
+                # Profile not found - show warning but DO NOT invalidate auth session
+                # User is authenticated, just missing profile data
+                import logging
+                logging.warning(
+                    f"Auth successful but profile not found | "
+                    f"user_id: {response.user.id[:8]}... | "
+                    f"email: {response.user.email}"
+                )
                 st.warning("⚠️ User profile not found. Please contact an administrator to create your profile.")
-                return None
+                # Still return auth success - profile lookup failure should not block login
+                # The app can handle missing profile gracefully
+                return {
+                    "user": response.user,
+                    "session": response.session,
+                    "profile": None
+                }
         
         return None
     except Exception as e:
@@ -107,6 +121,8 @@ def load_user_profile(user_id: str) -> dict | None:
     Returns:
         dict: Profile data or None if not found
     """
+    import logging
+    
     try:
         client = get_client(service_role=False)
         response = (
@@ -119,11 +135,21 @@ def load_user_profile(user_id: str) -> dict | None:
         
         # .single() returns the row directly in response.data (not a list)
         if response.data:
+            logging.info(f"Profile loaded successfully for user_id: {user_id[:8]}...")
             return response.data
         
+        # This shouldn't happen with .single() - it raises exception if not found
+        logging.warning(f"Profile query returned no data for user_id: {user_id[:8]}...")
         return None
     except Exception as e:
         # .single() raises exception if no row found
+        # Log diagnostic information for debugging
+        error_msg = str(e)
+        logging.error(
+            f"Profile lookup failed for user_id: {user_id[:8]}... | "
+            f"Error: {error_msg[:100]} | "
+            f"Query: profiles.select(*).eq(user_id, {user_id[:8]}...).single()"
+        )
         # Don't show error to user here - let the caller handle it
         # This prevents showing errors during normal operation
         return None
