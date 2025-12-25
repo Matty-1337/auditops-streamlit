@@ -38,9 +38,22 @@ def show_login_page():
     """Display login page."""
     st.markdown('<div class="login-container">', unsafe_allow_html=True)
     
-    # BUILD MARKER: Visible deployment verification
+    # BUILD MARKER: Visible deployment verification (DO NOT EDIT THIS MARKER - IT VERIFIES DEPLOYMENT)
+    import subprocess
+    import os
+    try:
+        # Get git commit SHA
+        repo_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        git_sha = subprocess.check_output(
+            ['git', 'rev-parse', '--short', 'HEAD'],
+            cwd=repo_root,
+            stderr=subprocess.DEVNULL
+        ).decode().strip()[:7]
+    except:
+        git_sha = "unknown"
     build_timestamp = datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M:%S UTC')
-    st.caption(f"BUILD MARKER: {build_timestamp} | FILE: auditops-streamlit/app.py")
+    entrypoint_path = "auditops-streamlit/app.py"
+    st.caption(f"🔧 BUILD: {git_sha} | {build_timestamp} | ENTRYPOINT: {entrypoint_path}")
     
     st.markdown('<h1 class="main-header">AuditOps</h1>', unsafe_allow_html=True)
     st.markdown("### Operations Portal")
