@@ -49,3 +49,11 @@ Thumbs.db
 *.pdf
 !requirements.txt
 
+
+__pycache__/
+*.pyc
+.venv/
+venv/
+.env
+.streamlit/secrets.toml
+
