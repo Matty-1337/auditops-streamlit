@@ -46,62 +46,120 @@ def get_client(service_role=False) -> Client:
         
         # CRITICAL FIX: Rehydrate session from st.session_state on every call
         # This ensures the client has the session even after reruns
-        # Only rehydrate if client doesn't already have a valid session (prevents unnecessary calls)
-        if _supabase_client and "auth_session" in st.session_state:
+        # Check both "supabase_session" (new format) and "auth_session" (legacy)
+        session = None
+        if "supabase_session" in st.session_state and st.session_state.supabase_session:
+            # New format: dict with access_token and refresh_token
+            session = st.session_state.supabase_session
+        elif "auth_session" in st.session_state and st.session_state.auth_session:
             session = st.session_state.auth_session
-            if session:
-                # Check if client already has a valid session to avoid unnecessary rehydration
-                needs_rehydration = True
-                try:
-                    current_user = _supabase_client.auth.get_user()
-                    user_obj = current_user.user if hasattr(current_user, "user") else current_user
-                    if user_obj and hasattr(user_obj, "id"):
-                        # Client has valid session, check if it matches stored user
-                        stored_user = st.session_state.get("auth_user")
-                        if stored_user:
-                            stored_id = getattr(stored_user, "id", None) if hasattr(stored_user, "id") else None
-                            if stored_id and user_obj.id == stored_id:
-                                needs_rehydration = False  # Session already valid and matches
-                except Exception:
-                    # Client has no session or error, needs rehydration
-                    pass
+        
+        if _supabase_client and session:
+            # Check if client already has a valid session to avoid unnecessary rehydration
+            needs_rehydration = True
+            try:
+                current_user = _supabase_client.auth.get_user()
+                user_obj = current_user.user if hasattr(current_user, "user") else current_user
+                if user_obj and hasattr(user_obj, "id"):
+                    # Client has valid session, check if it matches stored user
+                    stored_user = st.session_state.get("auth_user")
+                    if stored_user:
+                        stored_id = getattr(stored_user, "id", None) if hasattr(stored_user, "id") else None
+                        if stored_id and user_obj.id == stored_id:
+                            needs_rehydration = False  # Session already valid and matches
+            except Exception:
+                # Client has no session or error, needs rehydration
+                import logging
+                logging.info("get_client: Client has no valid session (get_user() failed) - rehydration needed")
+            
+            if needs_rehydration:
+                import logging
+                logging.info("get_client: Session rehydration needed - extracting tokens from st.session_state")
+                # Extract tokens from session object or dict
+                access_token = None
+                refresh_token = None
                 
-                if needs_rehydration:
-                    # Extract tokens from session object
-                    access_token = None
-                    refresh_token = None
-                    
+                # Handle dict format (from persist_session)
+                if isinstance(session, dict):
+                    access_token = session.get("access_token")
+                    refresh_token = session.get("refresh_token")
+                # Handle object format (legacy)
+                else:
                     if hasattr(session, "access_token"):
                         access_token = session.access_token
                     elif hasattr(session, "token"):
                         access_token = session.token
-                    elif isinstance(session, dict):
-                        access_token = session.get("access_token")
                     
                     if hasattr(session, "refresh_token"):
                         refresh_token = session.refresh_token
-                    elif isinstance(session, dict):
-                        refresh_token = session.get("refresh_token")
-                    
-                    # Rehydrate client with stored session tokens
-                    if access_token and refresh_token:
+                
+                # Rehydrate client with stored session tokens
+                if access_token and refresh_token:
+                    try:
+                        _supabase_client.auth.set_session(access_token, refresh_token)
+                        logging.info("get_client: Session rehydration successful (set_session called)")
+                    except (TypeError, AttributeError):
+                        # Fallback for different API versions
                         try:
-                            _supabase_client.auth.set_session(access_token, refresh_token)
-                        except (TypeError, AttributeError):
-                            # Fallback for different API versions
-                            try:
-                                session_dict = {
-                                    "access_token": access_token,
-                                    "refresh_token": refresh_token,
-                                    "token_type": "bearer"
-                                }
-                                _supabase_client.auth.set_session(session_dict)
-                            except Exception:
-                                # If rehydration fails, continue anyway
-                                # The session might still be valid in the client
-                                pass
+                            session_dict = {
+                                "access_token": access_token,
+                                "refresh_token": refresh_token,
+                                "token_type": "bearer"
+                            }
+                            _supabase_client.auth.set_session(session_dict)
+                            logging.info("get_client: Session rehydration successful (dict format fallback)")
+                        except Exception as e:
+                            # If rehydration fails, continue anyway
+                            # The session might still be valid in the client
+                            logging.warning(f"get_client: Session rehydration failed: {e}")
+                else:
+                    logging.warning(f"get_client: Session rehydration skipped - tokens missing (access_token: {bool(access_token)}, refresh_token: {bool(refresh_token)})")
+            else:
+                import logging
+                logging.info("get_client: Session rehydration skipped - client already has valid session")
         
         return _supabase_client
+
+
+def persist_session(client: Client):
+    """
+    Persist session tokens in st.session_state for rehydration on reruns.
+    
+    Args:
+        client: Supabase client instance with active session
+    """
+    try:
+        session = client.auth.get_session()
+        if session:
+            # Extract tokens from session
+            access_token = None
+            refresh_token = None
+            
+            if hasattr(session, "access_token"):
+                access_token = session.access_token
+            elif isinstance(session, dict):
+                access_token = session.get("access_token")
+            
+            if hasattr(session, "refresh_token"):
+                refresh_token = session.refresh_token
+            elif isinstance(session, dict):
+                refresh_token = session.get("refresh_token")
+            
+            if access_token and refresh_token:
+                st.session_state["supabase_session"] = {
+                    "access_token": access_token,
+                    "refresh_token": refresh_token
+                }
+    except Exception:
+        pass  # Fail silently if session cannot be retrieved
+
+
+def clear_persisted_session():
+    """Clear persisted session from st.session_state."""
+    if "supabase_session" in st.session_state:
+        del st.session_state["supabase_session"]
+    if "auth_session" in st.session_state:
+        del st.session_state["auth_session"]
 
 
 def reset_clients():

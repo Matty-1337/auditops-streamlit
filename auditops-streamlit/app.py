@@ -4,6 +4,7 @@ Main application entry point with authentication and navigation.
 """
 import streamlit as st
 import streamlit.components.v1 as components
+import requests
 from datetime import datetime, timezone
 from src.auth import login, logout, is_authenticated, get_current_profile, require_authentication
 from src.config import ROLE_ADMIN, ROLE_MANAGER, ROLE_AUDITOR
@@ -136,41 +137,89 @@ def show_login_page():
         submit = st.form_submit_button("Login", type="primary", use_container_width=True)
         
         if submit:
+            # Clear any stale error messages from previous attempts
+            if "last_login_error" in st.session_state:
+                del st.session_state.last_login_error
+            
             if not email or not password:
                 st.error("Please enter both email and password.")
             else:
                 with st.spinner("Logging in..."):
-                    result = login(email, password)
+                    from src.auth import login_with_password
+                    client = get_client(service_role=False)
+                    ok, err = login_with_password(client, email, password)
                     
-                    # CRITICAL: result is ALWAYS a dict with structured fields
-                    # Never show multiple errors - use structured result to show ONLY the correct one
-                    if not isinstance(result, dict):
-                        # Fallback if result is not a dict (shouldn't happen)
-                        st.error("Login failed. Please try again.")
-                    elif result.get("ok"):
+                    if ok:
                         st.success("Login successful!")
                         st.rerun()
                     else:
-                        # Show ONLY ONE error based on structured result
-                        error_msg = result.get("error", "Login failed. Please try again.")
-                        
-                        if not result.get("auth_ok"):
-                            # Auth failed - show ONLY auth error
-                            st.error(error_msg)
-                        elif not result.get("profile_ok"):
-                            # Auth succeeded but profile missing - show ONLY profile warning
-                            st.warning(f"⚠️ {error_msg}")
-                            # Still allow login - profile missing doesn't block auth
-                            st.info("You are authenticated, but some features may be limited.")
-                            st.rerun()
-                        else:
-                            # Shouldn't happen, but handle gracefully
-                            st.error(error_msg)
+                        st.error(err if err else "Login failed. Please try again.")
     
     # Forgot Password button
     st.markdown("---")
     if st.button("Forgot password?", use_container_width=True):
         show_forgot_password()
+    
+    # Auth Triage expander
+    with st.expander("🔍 Auth Triage", expanded=False):
+        from src.config import get_supabase_url, get_supabase_key
+        
+        supabase_url = get_supabase_url()
+        anon_key = get_supabase_key(service_role=False)
+        
+        # Extract hostname from URL (safe - no keys)
+        if supabase_url:
+            try:
+                from urllib.parse import urlparse
+                parsed = urlparse(supabase_url)
+                hostname = parsed.hostname or "unknown"
+            except Exception:
+                hostname = "error"
+        else:
+            hostname = "not_set"
+        
+        st.write(f"**Supabase Host:** {hostname}")
+        
+        # Health check
+        health_status = "unknown"
+        if supabase_url and anon_key:
+            try:
+                health_url = f"{supabase_url}/auth/v1/health"
+                headers = {
+                    "apikey": anon_key,
+                    "Authorization": f"Bearer {anon_key}"
+                }
+                response = requests.get(health_url, headers=headers, timeout=5)
+                health_status = "✅ 200 OK" if response.status_code == 200 else f"❌ {response.status_code}"
+            except Exception as e:
+                health_status = f"❌ Error: {str(e)[:50]}"
+        
+        st.write(f"**Auth Health Check:** {health_status}")
+        
+        # Query params (keys only, no values)
+        qp_keys = list(st.query_params.keys())
+        st.write(f"**Query Params Keys:** {qp_keys if qp_keys else 'none'}")
+        
+        # Session check
+        client = get_client(service_role=False)
+        try:
+            session = client.auth.get_session()
+            has_session = session is not None
+            st.write(f"**Session Exists:** {'✅ Yes' if has_session else '❌ No'}")
+        except Exception:
+            st.write("**Session Exists:** ❌ Error checking")
+        
+        # User check
+        try:
+            user_response = client.auth.get_user()
+            user = user_response.user if hasattr(user_response, "user") else user_response
+            if user and hasattr(user, "id"):
+                user_id_preview = user.id[:8] + "..." if len(user.id) >= 8 else user.id
+                st.write(f"**User Exists:** ✅ Yes (ID: {user_id_preview})")
+            else:
+                st.write("**User Exists:** ❌ No")
+        except Exception:
+            st.write("**User Exists:** ❌ Error checking")
     
     st.markdown("</div>", unsafe_allow_html=True)
 
@@ -241,8 +290,11 @@ def show_forgot_password():
                 try:
                     client = get_client(service_role=False)
                     # Get app URL for redirect
-                    from src.config import get_supabase_url
+                    # Redirect to reset password page - Supabase will append recovery tokens to this URL
+                    # The Reset Password page (pages/00_Reset_Password.py) will handle the tokens
                     app_url = "https://auditops.streamlit.app"  # Streamlit Cloud URL
+                    # Note: Supabase redirects to this base URL with tokens in fragment (#access_token=...)
+                    # JavaScript in the app converts fragments to query params for Streamlit
                     
                     # Send password reset email
                     client.auth.reset_password_for_email(
@@ -276,6 +328,23 @@ def main():
         return
     except Exception as e:
         st.error(f"⚠️ Configuration Error: {str(e)}")
+        st.stop()
+        return
+    
+    # CRITICAL: Early routing guard - detect recovery/invite tokens BEFORE showing login
+    # This prevents login UI from rendering during password reset flow
+    query_params = dict(st.query_params)
+    has_code = "code" in query_params and query_params.get("code")
+    has_access_token = "access_token" in query_params and query_params.get("access_token")
+    has_refresh_token = "refresh_token" in query_params and query_params.get("refresh_token")
+    has_recovery_type = query_params.get("type") in ["recovery", "invite"]
+    
+    # If recovery/invite tokens are present, let the reset password page handle it
+    # Streamlit will automatically route to pages/00_Reset_Password.py when accessed
+    # We just need to prevent the login UI from showing here
+    if has_code or (has_access_token and has_refresh_token) or has_recovery_type:
+        # Recovery/invite flow detected - don't show login UI
+        # The reset password page will handle the rest
         st.stop()
         return
     

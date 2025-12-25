@@ -124,3 +124,56 @@ def require_role(required_roles):
 
 # Backwards-compatible alias for existing page imports
 require_role_access = require_role
+
+
+def get_config_debug_info() -> dict:
+    """
+    Get safe debug information about configuration (no secrets exposed).
+    
+    Returns:
+        dict: {
+            "project_ref": str,  # Supabase project ref (e.g., "hyeislkhqkkcveqqbwix")
+            "config_source": str,  # "st.secrets" or "environment"
+            "anon_key_prefix": str  # First 12 characters of anon key (safe)
+        }
+    """
+    url = get_supabase_url()
+    anon_key = get_supabase_key(service_role=False)
+    
+    # Extract project ref from URL (e.g., https://hyeislkhqkkcveqqbwix.supabase.co -> hyeislkhqkkcveqqbwix)
+    project_ref = "unknown"
+    if url:
+        try:
+            # Remove protocol
+            url_clean = url.replace("https://", "").replace("http://", "")
+            # Split by dot and get first part (project ref)
+            parts = url_clean.split(".")
+            if len(parts) > 0:
+                project_ref = parts[0] if parts[0] else "unknown"
+        except Exception:
+            project_ref = "error"
+    
+    # Determine config source
+    config_source = "environment"
+    try:
+        # Try to access st.secrets to see if it exists
+        if hasattr(st, 'secrets') and st.secrets:
+            try:
+                # Try to access the supabase section
+                _ = st.secrets["supabase"]["url"]
+                config_source = "st.secrets"
+            except (KeyError, AttributeError):
+                config_source = "environment"
+    except Exception:
+        config_source = "environment"
+    
+    # Get safe prefix of anon key (first 12 chars only)
+    anon_key_prefix = "not_set"
+    if anon_key:
+        anon_key_prefix = anon_key[:12] if len(anon_key) >= 12 else anon_key[:len(anon_key)]
+    
+    return {
+        "project_ref": project_ref,
+        "config_source": config_source,
+        "anon_key_prefix": anon_key_prefix
+    }
