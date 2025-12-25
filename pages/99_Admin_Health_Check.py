@@ -52,16 +52,16 @@ results["service_key"] = check_status("Service Role Key", bool(service_key), "Pr
 st.subheader("Database Connectivity")
 try:
     client = get_client(service_role=False)
-    # Test query
-    test_result = client.table("profiles").select("id").limit(1).execute()
+    # Test query - schema-agnostic (doesn't assume id column)
+    test_result = client.table("profiles").select("*").limit(1).execute()
     results["db_anon"] = check_status("Database (Anon Key)", True, "Connected successfully")
 except Exception as e:
     results["db_anon"] = check_status("Database (Anon Key)", False, str(e))
 
 try:
     client_service = get_client(service_role=True)
-    # Test query
-    test_result = client_service.table("profiles").select("id").limit(1).execute()
+    # Test query - schema-agnostic (doesn't assume id column)
+    test_result = client_service.table("profiles").select("*").limit(1).execute()
     results["db_service"] = check_status("Database (Service Key)", True, "Connected successfully")
 except Exception as e:
     results["db_service"] = check_status("Database (Service Key)", False, str(e))
@@ -73,7 +73,8 @@ tables = ["profiles", "clients", "shifts", "pay_periods", "pay_items", "approval
 for table in tables:
     try:
         client = get_client(service_role=True)
-        result = client.table(table).select("id").limit(1).execute()
+        # Schema-agnostic check - doesn't assume id column exists
+        result = client.table(table).select("*").limit(1).execute()
         check_status(f"Table: {table}", True, "Accessible")
         results[f"table_{table}"] = True
     except Exception as e:
