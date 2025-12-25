@@ -5,6 +5,7 @@ Main application entry point with authentication and navigation.
 import streamlit as st
 import streamlit.components.v1 as components
 import os
+import logging
 from src.auth import (
     login, logout, is_authenticated, get_current_user, get_current_profile, 
     require_authentication, authenticate_with_tokens,
