@@ -7,7 +7,7 @@ from src.supabase_client import get_client
 from src.config import require_role, ROLE_ADMIN, ROLE_MANAGER, ROLE_AUDITOR
 
 
-def login(email: str, password: str) -> dict | None:
+def login(email: str, password: str) -> dict:
     """
     Authenticate user with email and password (PRIMARY AUTH METHOD).
     
@@ -16,8 +16,18 @@ def login(email: str, password: str) -> dict | None:
         password: User password
     
     Returns:
-        dict: User session data if successful, None otherwise
+        dict: Structured result with {
+            "ok": bool,           # Overall success (auth_ok AND profile_ok)
+            "auth_ok": bool,      # Authentication succeeded
+            "profile_ok": bool,   # Profile lookup succeeded
+            "error": str | None,  # Error message if any
+            "user": User | None,  # User object if auth_ok
+            "session": Session | None,  # Session if auth_ok
+            "profile": dict | None  # Profile if profile_ok
+        }
     """
+    import logging
+    
     try:
         client = get_client(service_role=False)
         response = client.auth.sign_in_with_password({
@@ -35,10 +45,8 @@ def login(email: str, password: str) -> dict | None:
                 verify_response = client.auth.get_user()
                 verify_user = verify_response.user if hasattr(verify_response, "user") else verify_response
                 if not verify_user or (hasattr(verify_user, "id") and verify_user.id != response.user.id):
-                    import logging
                     logging.warning("Login succeeded but session verification failed")
             except Exception as e:
-                import logging
                 logging.warning(f"Session verification failed: {e}")
                 # Continue anyway - session might still be valid
             
@@ -47,39 +55,62 @@ def login(email: str, password: str) -> dict | None:
             if profile:
                 st.session_state.user_profile = profile
                 return {
+                    "ok": True,
+                    "auth_ok": True,
+                    "profile_ok": True,
+                    "error": None,
                     "user": response.user,
                     "session": response.session,
                     "profile": profile
                 }
             else:
-                # Profile not found - show warning but DO NOT invalidate auth session
-                # User is authenticated, just missing profile data
-                import logging
+                # Profile not found - auth succeeded but profile missing
                 logging.warning(
                     f"Auth successful but profile not found | "
                     f"user_id: {response.user.id[:8]}... | "
                     f"email: {response.user.email}"
                 )
-                st.warning("⚠️ User profile not found. Please contact an administrator to create your profile.")
-                # Still return auth success - profile lookup failure should not block login
-                # The app can handle missing profile gracefully
                 return {
+                    "ok": False,  # Overall not ok because profile missing
+                    "auth_ok": True,
+                    "profile_ok": False,
+                    "error": "User profile not found. Please contact an administrator to create your profile.",
                     "user": response.user,
                     "session": response.session,
                     "profile": None
                 }
         
-        return None
+        # Auth failed - no user returned
+        return {
+            "ok": False,
+            "auth_ok": False,
+            "profile_ok": False,
+            "error": "Invalid email or password. Please try again.",
+            "user": None,
+            "session": None,
+            "profile": None
+        }
     except Exception as e:
         error_msg = str(e)
-        # Provide more helpful error messages
+        # Determine error message
         if "Invalid login credentials" in error_msg or "Email not confirmed" in error_msg:
-            st.error("Invalid email or password. Please try again.")
+            error_text = "Invalid email or password. Please try again."
         elif "email" in error_msg.lower() and "not found" in error_msg.lower():
-            st.error("Email address not found. Please contact an administrator.")
+            error_text = "Email address not found. Please contact an administrator."
         else:
-            st.error("Login failed. Please check your credentials and try again.")
-        return None
+            error_text = "Login failed. Please check your credentials and try again."
+        
+        logging.error(f"Login exception: {error_msg[:200]}")
+        
+        return {
+            "ok": False,
+            "auth_ok": False,
+            "profile_ok": False,
+            "error": error_text,
+            "user": None,
+            "session": None,
+            "profile": None
+        }
 
 
 def logout():

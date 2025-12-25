@@ -150,6 +150,10 @@ def show_recovery_page(access_token: str, refresh_token: str):
 def show_login_page():
     """Display password-first login page."""
     st.markdown('<div class="login-container">', unsafe_allow_html=True)
+    
+    # Build stamp - visible truth test for deployment
+    st.caption("Build: a984f67 (expected)")
+    
     st.markdown('<h1 class="main-header">AuditOps</h1>', unsafe_allow_html=True)
     st.markdown("### Operations Portal")
     st.markdown("---")
@@ -165,16 +169,73 @@ def show_login_page():
             else:
                 with st.spinner("Logging in..."):
                     result = login(email, password)
-                    if result:
+                    
+                    # Use structured result to show correct error message
+                    if result.get("ok"):
                         st.success("Login successful!")
                         st.rerun()
                     else:
-                        st.error("Invalid email or password. Please try again.")
+                        # Show error based on structured result
+                        if not result.get("auth_ok"):
+                            # Auth failed
+                            st.error(result.get("error", "Invalid email or password. Please try again."))
+                        elif not result.get("profile_ok"):
+                            # Auth succeeded but profile missing
+                            st.warning(f"⚠️ {result.get('error', 'User profile not found. Please contact an administrator.')}")
+                            # Still allow login - profile missing doesn't block auth
+                            st.info("You are authenticated, but some features may be limited.")
+                            st.rerun()
+                        else:
+                            # Shouldn't happen, but handle gracefully
+                            st.error(result.get("error", "Login failed. Please try again."))
     
     # Optional: Forgot password button
     st.markdown("---")
     if st.button("Forgot Password?", use_container_width=True):
         show_forgot_password()
+    
+    # Auth debug accordion
+    with st.expander("Auth debug", expanded=False):
+        from src.config import get_supabase_url
+        try:
+            supabase_url = get_supabase_url()
+            # Show only project ref (e.g., xxxxxx.supabase.co)
+            if supabase_url:
+                url_parts = supabase_url.replace("https://", "").replace("http://", "").split(".")
+                if len(url_parts) > 1:
+                    project_ref = url_parts[0] if url_parts[0] else "unknown"
+                else:
+                    project_ref = "unknown"
+            else:
+                project_ref = "not configured"
+            st.write("Supabase project:", project_ref)
+        except Exception:
+            st.write("Supabase project: error reading config")
+        
+        # Check session state
+        has_session = bool(st.session_state.get("auth_session"))
+        st.write("Has session:", has_session)
+        
+        # Check user
+        user = st.session_state.get("auth_user")
+        if user and hasattr(user, "id"):
+            user_id_preview = user.id[:8] if len(user.id) >= 8 else user.id
+        else:
+            user_id_preview = None
+        st.write("User ID:", user_id_preview)
+        
+        # Check profile
+        profile = st.session_state.get("user_profile")
+        st.write("Profile exists:", bool(profile))
+        
+        # Last error (if stored)
+        if "last_auth_error" in st.session_state:
+            error_msg = str(st.session_state.last_auth_error)
+            # Sanitize - show first 200 chars, redact tokens
+            sanitized = error_msg[:200].replace("Bearer ", "Bearer [REDACTED]").replace("access_token", "[REDACTED]")
+            st.write("Last error:", sanitized)
+        else:
+            st.write("Last error: none")
     
     st.markdown("</div>", unsafe_allow_html=True)
 
