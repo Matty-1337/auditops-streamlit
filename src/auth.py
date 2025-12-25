@@ -109,7 +109,7 @@ def load_user_profile(user_id: str) -> dict | None:
     """
     try:
         client = get_client(service_role=False)
-        response = client.table("profiles").select("*").eq("id", user_id).execute()
+        response = client.table("profiles").select("*").eq("user_id", user_id).execute()
         
         if response.data and len(response.data) > 0:
             return response.data[0]

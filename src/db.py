@@ -18,7 +18,7 @@ from src.config import (
 def get_profile(user_id: str, use_service_role: bool = False) -> Optional[Dict]:
     """Get profile by user ID."""
     client = get_client(service_role=use_service_role)
-    response = client.table("profiles").select("*").eq("id", user_id).execute()
+    response = client.table("profiles").select("*").eq("user_id", user_id).execute()
     if response.data:
         return response.data[0]
     return None
@@ -46,7 +46,7 @@ def create_profile(data: Dict, use_service_role: bool = True) -> Optional[Dict]:
 def update_profile(user_id: str, data: Dict, use_service_role: bool = False) -> Optional[Dict]:
     """Update profile."""
     client = get_client(service_role=use_service_role)
-    response = client.table("profiles").update(data).eq("id", user_id).execute()
+    response = client.table("profiles").update(data).eq("user_id", user_id).execute()
     if response.data:
         return response.data[0]
     return None
