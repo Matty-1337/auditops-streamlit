@@ -226,25 +226,73 @@ def is_authenticated() -> bool:
     return "auth_user" in st.session_state and st.session_state.auth_user is not None
 
 
-def load_user_profile(user_id: str) -> dict | None:
+def load_user_profile(user_id: str, client=None) -> dict | None:
     """
     Load user profile from database.
     
     Args:
         user_id: Supabase Auth user ID (UUID)
+        client: Optional Supabase client instance (if provided, uses this instead of creating new)
     
     Returns:
         dict: Profile data or None if not found
     """
+    import logging
+    
     try:
-        client = get_client(service_role=False)
-        response = client.table("profiles").select("*").eq("id", user_id).execute()
+        # Use provided client (with session) or get a new one
+        if client is None:
+            client = get_client(service_role=False)
         
-        if response.data and len(response.data) > 0:
-            return response.data[0]
+        # Use maybe_single() instead of single() to avoid exception if no row found
+        # This is safer and allows us to check for None explicitly
+        response = (
+            client.table("profiles")
+            .select("*")
+            .eq("user_id", user_id)  # CRITICAL: profiles table uses user_id, not id
+            .maybe_single()
+            .execute()
+        )
         
+        # Handle response.data - maybe_single() returns None if no row found, or dict if found
+        profile_data = None
+        if response.data:
+            if isinstance(response.data, dict):
+                profile_data = response.data
+            elif isinstance(response.data, list) and len(response.data) > 0:
+                profile_data = response.data[0]
+            else:
+                logging.warning(f"Unexpected response.data type: {type(response.data)} for user_id: {user_id[:8]}...")
+        
+        if profile_data:
+            logging.info(f"Profile loaded successfully for user_id: {user_id[:8]}... | role: {profile_data.get('role', 'N/A')}")
+            return profile_data
+        
+        # No profile found - this is expected if profile doesn't exist
+        logging.warning(f"Profile query returned no data for user_id: {user_id[:8]}... | This may indicate profile row is missing or RLS is blocking")
         return None
     except Exception as e:
+        # .single() raises exception if no row found or RLS blocks access
+        # Log diagnostic information for debugging
+        error_msg = str(e)
+        error_type = type(e).__name__
+        
+        # Check for RLS/permission errors specifically
+        is_rls_error = (
+            "permission denied" in error_msg.lower() or
+            "42501" in error_msg or  # PostgreSQL permission denied error code
+            "RLS" in error_msg.upper() or
+            "policy" in error_msg.lower()
+        )
+        
+        logging.error(
+            f"Profile lookup failed for user_id: {user_id[:8]}... | "
+            f"Error type: {error_type} | "
+            f"Error: {error_msg[:200]} | "
+            f"RLS/Permission issue: {is_rls_error} | "
+            f"Query: profiles.select(*).eq(user_id, {user_id[:8]}...).maybe_single()"
+        )
+        
         # Don't show error to user here - let the caller handle it
         # This prevents showing errors during normal operation
         return None
@@ -307,4 +355,63 @@ def is_manager() -> bool:
 def is_auditor() -> bool:
     """Check if current user is an auditor."""
     return get_user_role() == ROLE_AUDITOR
+
+
+def reset_password(new_password: str, access_token: str = None, refresh_token: str = None) -> tuple[bool, str]:
+    """
+    Reset user password using recovery token.
+    
+    Args:
+        new_password: New password to set
+        access_token: Access token from recovery link (optional, uses current session if not provided)
+        refresh_token: Refresh token from recovery link (optional, uses current session if not provided)
+    
+    Returns:
+        tuple: (success: bool, error_message: str)
+    """
+    try:
+        client = get_client(service_role=False)
+        
+        # If tokens provided, set session first (for recovery flow)
+        # CRITICAL FIX: Use correct API signature
+        if access_token and refresh_token:
+            try:
+                client.auth.set_session(access_token, refresh_token)
+            except TypeError:
+                # Fallback for older API versions
+                session_data = {
+                    "access_token": access_token,
+                    "refresh_token": refresh_token,
+                    "token_type": "bearer",
+                    "expires_in": 3600
+                }
+                client.auth.set_session(session_data)
+            except Exception:
+                # Session might already be set, continue anyway
+                pass
+        
+        # Update user password
+        response = client.auth.update_user({"password": new_password})
+        
+        if response.user:
+            # After password reset, store the session
+            st.session_state.auth_user = response.user
+            if hasattr(response, 'session') and response.session:
+                st.session_state.auth_session = response.session
+            
+            # Load user profile
+            profile = load_user_profile(response.user.id)
+            if profile:
+                st.session_state.user_profile = profile
+                return True, ""
+            else:
+                return False, "User profile not found. Please contact an administrator."
+        
+        return False, "Password reset failed. Please try again."
+    except Exception as e:
+        error_msg = str(e)
+        if "password" in error_msg.lower():
+            return False, "Password reset failed. Please check password requirements and try again."
+        else:
+            return False, "Password reset failed. Please try again."
 
