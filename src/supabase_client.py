@@ -24,7 +24,13 @@ def get_client(service_role=False) -> Client:
     """
     global _supabase_client, _supabase_service_client
     
-    validate_config()
+    # Validate config (only checks if secrets exist, not database connectivity)
+    # This should not block if secrets are present, even if DB queries fail
+    try:
+        validate_config()
+    except ValueError:
+        # Re-raise config errors (missing secrets) - these are critical
+        raise
     
     url = get_supabase_url()
     

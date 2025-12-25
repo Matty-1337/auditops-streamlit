@@ -69,6 +69,9 @@ def validate_config():
     """
     Validate that required configuration is present.
     Raises ValueError if critical config is missing.
+    
+    NOTE: This only checks if secrets exist, NOT if they work.
+    Database connectivity checks should be separate and non-blocking.
     """
     url = get_supabase_url()
     anon_key = get_supabase_key(service_role=False)
