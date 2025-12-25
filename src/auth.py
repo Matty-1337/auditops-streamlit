@@ -9,7 +9,7 @@ from src.config import require_role, ROLE_ADMIN, ROLE_MANAGER, ROLE_AUDITOR
 
 def login(email: str, password: str) -> dict | None:
     """
-    Authenticate user with Supabase Auth.
+    Authenticate user with email and password (PRIMARY AUTH METHOD).
     
     Args:
         email: User email
@@ -26,9 +26,21 @@ def login(email: str, password: str) -> dict | None:
         })
         
         if response.user:
-            # Store session
+            # Store session in st.session_state
             st.session_state.auth_user = response.user
             st.session_state.auth_session = response.session
+            
+            # Verify session is valid
+            try:
+                verify_response = client.auth.get_user()
+                verify_user = verify_response.user if hasattr(verify_response, "user") else verify_response
+                if not verify_user or (hasattr(verify_user, "id") and verify_user.id != response.user.id):
+                    import logging
+                    logging.warning("Login succeeded but session verification failed")
+            except Exception as e:
+                import logging
+                logging.warning(f"Session verification failed: {e}")
+                # Continue anyway - session might still be valid
             
             # Load user profile
             profile = load_user_profile(response.user.id)
@@ -49,8 +61,10 @@ def login(email: str, password: str) -> dict | None:
         # Provide more helpful error messages
         if "Invalid login credentials" in error_msg or "Email not confirmed" in error_msg:
             st.error("Invalid email or password. Please try again.")
+        elif "email" in error_msg.lower() and "not found" in error_msg.lower():
+            st.error("Email address not found. Please contact an administrator.")
         else:
-            st.error(f"Login failed: {error_msg}")
+            st.error("Login failed. Please check your credentials and try again.")
         return None
 
 
@@ -165,3 +179,260 @@ def is_auditor() -> bool:
     """Check if current user is an auditor."""
     return get_user_role() == ROLE_AUDITOR
 
+
+def authenticate_with_tokens(access_token: str, refresh_token: str) -> dict | None:
+    """
+    Authenticate user with access and refresh tokens from magic link.
+    
+    Args:
+        access_token: Access token from URL
+        refresh_token: Refresh token from URL
+    
+    Returns:
+        dict: User session data if successful, None otherwise
+    """
+    try:
+        client = get_client(service_role=False)
+        
+        # CRITICAL FIX: supabase-py set_session takes access_token and refresh_token as separate parameters
+        # Not a dict! This was the root cause of authentication failures.
+        try:
+            # Try the correct API signature: set_session(access_token, refresh_token)
+            response = client.auth.set_session(access_token, refresh_token)
+        except TypeError:
+            # Fallback: some versions may accept a session dict, but this is deprecated
+            # Log for debugging but don't expose to user
+            import logging
+            logging.warning("set_session dict format used - may be deprecated")
+            session_data = {
+                "access_token": access_token,
+                "refresh_token": refresh_token,
+                "token_type": "bearer",
+                "expires_in": 3600
+            }
+            response = client.auth.set_session(session_data)
+        except Exception as e:
+            # If set_session fails completely, log and return None
+            import logging
+            logging.error(f"set_session failed: {str(e)}", exc_info=True)
+            raise
+        
+        if response and hasattr(response, 'user') and response.user:
+            # Store session in st.session_state
+            st.session_state.auth_user = response.user
+            if hasattr(response, 'session') and response.session:
+                st.session_state.auth_session = response.session
+            else:
+                # Create minimal session object if not returned
+                # Store tokens for rehydration on next run
+                class Session:
+                    def __init__(self, access_token, refresh_token):
+                        self.access_token = access_token
+                        self.refresh_token = refresh_token
+                st.session_state.auth_session = Session(access_token, refresh_token)
+            
+            # CRITICAL: Verify session is actually set in the client
+            # This ensures the client has the session for subsequent calls
+            try:
+                verify_response = client.auth.get_user()
+                # Handle both response.user and direct user object
+                verify_user = verify_response.user if hasattr(verify_response, "user") else verify_response
+                if not verify_user or (hasattr(verify_user, "id") and not verify_user.id):
+                    # Session set but not verified - this is a problem
+                    import logging
+                    logging.warning("set_session succeeded but get_user() returned no user")
+            except Exception as e:
+                import logging
+                logging.warning(f"Session verification failed: {str(e)}")
+                # Continue anyway - session might still be valid
+            
+            # Load user profile
+            profile = load_user_profile(response.user.id)
+            if profile:
+                st.session_state.user_profile = profile
+                return {
+                    "user": response.user,
+                    "session": st.session_state.auth_session,
+                    "profile": profile
+                }
+            else:
+                st.warning("⚠️ User profile not found. Please contact an administrator to create your profile.")
+                return None
+        
+        return None
+    except Exception as e:
+        error_msg = str(e)
+        # Log full error for debugging (not shown to user)
+        import logging
+        logging.error(f"Token authentication failed: {error_msg}", exc_info=True)
+        
+        # Don't expose token details in error messages
+        if "Invalid" in error_msg or "expired" in error_msg.lower() or "token" in error_msg.lower():
+            st.error("Authentication failed. The link may have expired. Please request a new magic link.")
+        elif "set_session" in error_msg.lower() or "session" in error_msg.lower():
+            st.error("Authentication failed. Please contact support if this issue persists.")
+        else:
+            st.error("Authentication failed. Please try again.")
+        return None
+
+
+def exchange_code_for_session(auth_code: str) -> dict | None:
+    """
+    Exchange PKCE authorization code for session tokens.
+    
+    Args:
+        auth_code: Authorization code from PKCE flow
+    
+    Returns:
+        dict: User session data if successful, None otherwise
+    """
+    try:
+        client = get_client(service_role=False)
+        
+        # Try supabase-py method first (if it exists)
+        try:
+            if hasattr(client.auth, 'exchange_code_for_session'):
+                response = client.auth.exchange_code_for_session(auth_code)
+                if response and hasattr(response, 'user') and response.user:
+                    # Store session
+                    st.session_state.auth_user = response.user
+                    if hasattr(response, 'session') and response.session:
+                        st.session_state.auth_session = response.session
+                    else:
+                        # Create minimal session object
+                        class Session:
+                            def __init__(self, access_token, refresh_token):
+                                self.access_token = access_token
+                                self.refresh_token = refresh_token
+                        # Extract tokens from response if available
+                        if hasattr(response, 'access_token') and hasattr(response, 'refresh_token'):
+                            st.session_state.auth_session = Session(response.access_token, response.refresh_token)
+                        else:
+                            # Fallback: we'll need to get tokens from direct API call
+                            pass
+                    
+                    # Load user profile
+                    profile = load_user_profile(response.user.id)
+                    if profile:
+                        st.session_state.user_profile = profile
+                        return {
+                            "user": response.user,
+                            "session": st.session_state.auth_session,
+                            "profile": profile
+                        }
+        except AttributeError:
+            # Method doesn't exist, use direct HTTP call
+            pass
+        except Exception as e:
+            import logging
+            logging.warning(f"exchange_code_for_session method failed: {e}")
+            # Fall through to direct HTTP call
+        
+        # Fallback: Direct HTTP call to Supabase token endpoint
+        from src.config import get_supabase_url, get_supabase_key
+        import requests
+        
+        supabase_url = get_supabase_url()
+        supabase_key = get_supabase_key(service_role=False)
+        
+        # PKCE code exchange endpoint
+        token_url = f"{supabase_url}/auth/v1/token?grant_type=authorization_code"
+        
+        headers = {
+            "apikey": supabase_key,
+            "Content-Type": "application/x-www-form-urlencoded"
+        }
+        
+        # For PKCE, we need code_verifier, but Supabase magic links don't provide it
+        # This is a limitation - PKCE requires code_verifier which must be stored from initial request
+        # For now, try without code_verifier (may work for some Supabase configurations)
+        data = {
+            "code": auth_code,
+            "grant_type": "authorization_code"
+        }
+        
+        try:
+            response = requests.post(token_url, headers=headers, data=data, timeout=10)
+            response.raise_for_status()
+            token_data = response.json()
+            
+            if "access_token" in token_data and "refresh_token" in token_data:
+                # Use the tokens to set session
+                return authenticate_with_tokens(
+                    token_data["access_token"],
+                    token_data["refresh_token"]
+                )
+            else:
+                import logging
+                logging.error(f"PKCE exchange response missing tokens: {token_data}")
+                return None
+        except requests.exceptions.RequestException as e:
+            import logging
+            logging.error(f"PKCE HTTP exchange failed: {e}", exc_info=True)
+            return None
+        
+    except Exception as e:
+        import logging
+        logging.error(f"PKCE code exchange failed: {e}", exc_info=True)
+        return None
+
+
+def reset_password(new_password: str, access_token: str = None, refresh_token: str = None) -> bool:
+    """
+    Reset user password using recovery token.
+    
+    Args:
+        new_password: New password to set
+        access_token: Access token from recovery link (optional, uses current session if not provided)
+        refresh_token: Refresh token from recovery link (optional, uses current session if not provided)
+    
+    Returns:
+        bool: True if successful, False otherwise
+    """
+    try:
+        client = get_client(service_role=False)
+        
+        # If tokens provided, set session first (for recovery flow)
+        # CRITICAL FIX: Use correct API signature
+        if access_token and refresh_token:
+            try:
+                client.auth.set_session(access_token, refresh_token)
+            except TypeError:
+                # Fallback for older API versions
+                session_data = {
+                    "access_token": access_token,
+                    "refresh_token": refresh_token,
+                    "token_type": "bearer",
+                    "expires_in": 3600
+                }
+                client.auth.set_session(session_data)
+            except Exception:
+                # Session might already be set, continue anyway
+                pass
+        
+        # Update user password
+        response = client.auth.update_user({"password": new_password})
+        
+        if response.user:
+            # After password reset, store the session
+            st.session_state.auth_user = response.user
+            if hasattr(response, 'session') and response.session:
+                st.session_state.auth_session = response.session
+            
+            # Load user profile
+            profile = load_user_profile(response.user.id)
+            if profile:
+                st.session_state.user_profile = profile
+                return True
+            else:
+                st.warning("⚠️ User profile not found. Please contact an administrator.")
+                return False
+        
+        return False
+    except Exception as e:
+        error_msg = str(e)
+        if "password" in error_msg.lower():
+            st.error("Password reset failed. Please check password requirements and try again.")
+        else:
+            st.error("Password reset failed. Please try again.")
+        return False
