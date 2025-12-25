@@ -109,13 +109,21 @@ def load_user_profile(user_id: str) -> dict | None:
     """
     try:
         client = get_client(service_role=False)
-        response = client.table("profiles").select("*").eq("user_id", user_id).execute()
+        response = (
+            client.table("profiles")
+            .select("*")
+            .eq("user_id", user_id)
+            .single()
+            .execute()
+        )
         
-        if response.data and len(response.data) > 0:
-            return response.data[0]
+        # .single() returns the row directly in response.data (not a list)
+        if response.data:
+            return response.data
         
         return None
     except Exception as e:
+        # .single() raises exception if no row found
         # Don't show error to user here - let the caller handle it
         # This prevents showing errors during normal operation
         return None

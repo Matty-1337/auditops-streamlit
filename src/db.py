@@ -18,10 +18,22 @@ from src.config import (
 def get_profile(user_id: str, use_service_role: bool = False) -> Optional[Dict]:
     """Get profile by user ID."""
     client = get_client(service_role=use_service_role)
-    response = client.table("profiles").select("*").eq("user_id", user_id).execute()
-    if response.data:
-        return response.data[0]
-    return None
+    try:
+        response = (
+            client.table("profiles")
+            .select("*")
+            .eq("user_id", user_id)
+            .single()
+            .execute()
+        )
+        # .single() returns the row directly in response.data (not a list)
+        if response.data:
+            return response.data
+        return None
+    except Exception:
+        # .single() raises exception if no row found
+        # Profile not found or query failed
+        return None
 
 
 def get_all_profiles(active_only: bool = True, use_service_role: bool = False) -> List[Dict]:
@@ -46,10 +58,22 @@ def create_profile(data: Dict, use_service_role: bool = True) -> Optional[Dict]:
 def update_profile(user_id: str, data: Dict, use_service_role: bool = False) -> Optional[Dict]:
     """Update profile."""
     client = get_client(service_role=use_service_role)
-    response = client.table("profiles").update(data).eq("user_id", user_id).execute()
-    if response.data:
-        return response.data[0]
-    return None
+    try:
+        response = (
+            client.table("profiles")
+            .update(data)
+            .eq("user_id", user_id)
+            .single()
+            .execute()
+        )
+        # .single() returns the row directly in response.data (not a list)
+        if response.data:
+            return response.data
+        return None
+    except Exception:
+        # .single() raises exception if no row found
+        # Profile not found or update failed
+        return None
 
 
 # ============================================
