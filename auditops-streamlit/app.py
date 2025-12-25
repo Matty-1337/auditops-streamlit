@@ -263,8 +263,8 @@ def show_login_page():
                                     access_token_json = json.dumps(access_token)
                                     refresh_token_json = json.dumps(refresh_token)
 
-                                    # Store tokens using st.markdown (more reliable than components.html)
-                                    st.markdown(f"""
+                                    # CRITICAL: Must use components.html() - st.markdown() doesn't execute scripts!
+                                    components.html(f"""
                                         <script>
                                         (function() {{
                                             try {{
@@ -278,7 +278,7 @@ def show_login_page():
                                             }}
                                         }})();
                                         </script>
-                                    """, unsafe_allow_html=True)
+                                    """, height=0)
 
                                     st.success("Login successful!")
                                     logging.info("[AuditOps] Rerunning after login...")
@@ -479,9 +479,9 @@ def main():
         return
 
     # STEP 1: CRITICAL - Always inject localStorage restore script at the VERY TOP
-    # Use st.markdown for more reliable execution than components.html
+    # MUST use components.html() - st.markdown() strips <script> tags!
     # This MUST run before any auth checks
-    st.markdown("""
+    components.html("""
         <script>
         (function() {
             try {
@@ -499,7 +499,7 @@ def main():
                 const refresh_token = localStorage.getItem("auditops_rt");
 
                 if (access_token && refresh_token) {
-                    console.log("[AuditOps] Tokens found in localStorage, redirecting to restore...");
+                    console.log("[AuditOps] Tokens found in localStorage, redirecting...");
 
                     // Add tokens and restore flag to URL
                     params.set('access_token', access_token);
@@ -516,7 +516,7 @@ def main():
             }
         })();
         </script>
-    """, unsafe_allow_html=True)
+    """, height=0)
 
     # STEP 2: Check if we have tokens in query params from the restore redirect
     query_params = dict(st.query_params)
@@ -583,14 +583,14 @@ def main():
                     logging.warning("[AuditOps] Restore failed - invalid user")
                     st.session_state.restore_succeeded = False
 
-                    # Clear bad tokens from localStorage
-                    st.markdown("""
+                    # Clear bad tokens from localStorage using components.html()
+                    components.html("""
                         <script>
                         localStorage.removeItem("auditops_at");
                         localStorage.removeItem("auditops_rt");
                         console.log("[AuditOps] Cleared invalid tokens");
                         </script>
-                    """, unsafe_allow_html=True)
+                    """, height=0)
 
                     st.query_params.clear()
                     st.rerun()
@@ -600,14 +600,14 @@ def main():
                 logging.error(f"[AuditOps] Restore exception: {str(e)[:200]}")
                 st.session_state.restore_succeeded = False
 
-                # Clear tokens
-                st.markdown("""
+                # Clear tokens using components.html()
+                components.html("""
                     <script>
                     localStorage.removeItem("auditops_at");
                     localStorage.removeItem("auditops_rt");
                     console.log("[AuditOps] Cleared tokens after error");
                     </script>
-                """, unsafe_allow_html=True)
+                """, height=0)
 
                 st.query_params.clear()
                 st.rerun()

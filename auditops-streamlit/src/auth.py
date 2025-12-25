@@ -265,14 +265,16 @@ def login(email: str, password: str) -> dict:
 
 def logout():
     """Log out current user and clear session."""
+    import streamlit.components.v1 as components
+
     try:
         client = get_client(service_role=False)
         client.auth.sign_out()
     except Exception:
         pass
 
-    # Clear localStorage tokens using st.markdown (more reliable)
-    st.markdown("""
+    # Clear localStorage tokens using components.html() - st.markdown() doesn't execute scripts!
+    components.html("""
         <script>
         (function() {
             try {
@@ -284,7 +286,7 @@ def logout():
             }
         })();
         </script>
-    """, unsafe_allow_html=True)
+    """, height=0)
 
     # Clear session state
     for key in ["auth_user", "auth_session", "user_profile", "supabase_session", "restore_attempted", "restore_succeeded"]:
