@@ -40,6 +40,43 @@ def login(email: str, password: str) -> dict:
             st.session_state.auth_user = response.user
             st.session_state.auth_session = response.session
             
+            # CRITICAL: Ensure the client has the session from sign_in_with_password
+            # The client should already have it, but explicitly set it to be sure
+            if response.session:
+                try:
+                    # Extract tokens from session
+                    access_token = None
+                    refresh_token = None
+                    
+                    if hasattr(response.session, "access_token"):
+                        access_token = response.session.access_token
+                    elif isinstance(response.session, dict):
+                        access_token = response.session.get("access_token")
+                    
+                    if hasattr(response.session, "refresh_token"):
+                        refresh_token = response.session.refresh_token
+                    elif isinstance(response.session, dict):
+                        refresh_token = response.session.get("refresh_token")
+                    
+                    # Ensure client has the session set (may already be set by sign_in_with_password)
+                    if access_token and refresh_token:
+                        try:
+                            client.auth.set_session(access_token, refresh_token)
+                        except (TypeError, AttributeError):
+                            # Fallback for different API versions
+                            try:
+                                session_dict = {
+                                    "access_token": access_token,
+                                    "refresh_token": refresh_token,
+                                    "token_type": "bearer"
+                                }
+                                client.auth.set_session(session_dict)
+                            except Exception as e:
+                                logging.warning(f"Failed to set session explicitly: {e}")
+                except Exception as e:
+                    logging.warning(f"Session extraction/setting failed: {e}")
+                    # Continue - client may already have session from sign_in_with_password
+            
             # Verify session is valid
             try:
                 verify_response = client.auth.get_user()
@@ -50,8 +87,9 @@ def login(email: str, password: str) -> dict:
                 logging.warning(f"Session verification failed: {e}")
                 # Continue anyway - session might still be valid
             
-            # Load user profile
-            profile = load_user_profile(response.user.id)
+            # Load user profile using the SAME client instance that has the session
+            # Pass client explicitly to ensure session is used
+            profile = load_user_profile(response.user.id, client=client)
             if profile:
                 st.session_state.user_profile = profile
                 return {
@@ -142,12 +180,13 @@ def is_authenticated() -> bool:
     return "auth_user" in st.session_state and st.session_state.auth_user is not None
 
 
-def load_user_profile(user_id: str) -> dict | None:
+def load_user_profile(user_id: str, client=None) -> dict | None:
     """
     Load user profile from database.
     
     Args:
         user_id: Supabase Auth user ID (UUID)
+        client: Optional Supabase client instance (if provided, uses this instead of creating new)
     
     Returns:
         dict: Profile data or None if not found
@@ -155,7 +194,10 @@ def load_user_profile(user_id: str) -> dict | None:
     import logging
     
     try:
-        client = get_client(service_role=False)
+        # Use provided client (with session) or get a new one
+        if client is None:
+            client = get_client(service_role=False)
+        
         response = (
             client.table("profiles")
             .select("*")
@@ -164,23 +206,45 @@ def load_user_profile(user_id: str) -> dict | None:
             .execute()
         )
         
-        # .single() returns the row directly in response.data (not a list)
+        # Handle response.data - could be a dict (single row) or list with one item
+        profile_data = None
         if response.data:
+            if isinstance(response.data, dict):
+                profile_data = response.data
+            elif isinstance(response.data, list) and len(response.data) > 0:
+                profile_data = response.data[0]
+            else:
+                logging.warning(f"Unexpected response.data type: {type(response.data)} for user_id: {user_id[:8]}...")
+        
+        if profile_data:
             logging.info(f"Profile loaded successfully for user_id: {user_id[:8]}...")
-            return response.data
+            return profile_data
         
         # This shouldn't happen with .single() - it raises exception if not found
         logging.warning(f"Profile query returned no data for user_id: {user_id[:8]}...")
         return None
     except Exception as e:
-        # .single() raises exception if no row found
+        # .single() raises exception if no row found or RLS blocks access
         # Log diagnostic information for debugging
         error_msg = str(e)
+        error_type = type(e).__name__
+        
+        # Check for RLS/permission errors specifically
+        is_rls_error = (
+            "permission denied" in error_msg.lower() or
+            "42501" in error_msg or  # PostgreSQL permission denied error code
+            "RLS" in error_msg.upper() or
+            "policy" in error_msg.lower()
+        )
+        
         logging.error(
             f"Profile lookup failed for user_id: {user_id[:8]}... | "
-            f"Error: {error_msg[:100]} | "
+            f"Error type: {error_type} | "
+            f"Error: {error_msg[:200]} | "
+            f"RLS/Permission issue: {is_rls_error} | "
             f"Query: profiles.select(*).eq(user_id, {user_id[:8]}...).single()"
         )
+        
         # Don't show error to user here - let the caller handle it
         # This prevents showing errors during normal operation
         return None
