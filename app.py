@@ -152,7 +152,7 @@ def show_login_page():
     st.markdown('<div class="login-container">', unsafe_allow_html=True)
     
     # Build stamp - visible truth test for deployment
-    st.caption("Build: a984f67 (expected)")
+    st.caption("Build: 8680c0f (expected)")
     
     st.markdown('<h1 class="main-header">AuditOps</h1>', unsafe_allow_html=True)
     st.markdown("### Operations Portal")
