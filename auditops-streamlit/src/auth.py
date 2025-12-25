@@ -3,8 +3,64 @@ Authentication and authorization helpers.
 """
 import streamlit as st
 from supabase import Client
-from src.supabase_client import get_client
+from src.supabase_client import get_client, persist_session
 from src.config import require_role, ROLE_ADMIN, ROLE_MANAGER, ROLE_AUDITOR
+
+
+def login_with_password(client: Client, email: str, password: str) -> tuple[bool, str | None]:
+    """
+    Simple login function that authenticates and persists session.
+    
+    Args:
+        client: Supabase client instance
+        email: User email
+        password: User password
+    
+    Returns:
+        tuple: (ok: bool, err: str | None)
+    """
+    try:
+        response = client.auth.sign_in_with_password({
+            "email": email,
+            "password": password
+        })
+        
+        if response and hasattr(response, 'user') and response.user:
+            # Persist session for rehydration on reruns
+            persist_session(client)
+            # Also store in legacy format for compatibility
+            st.session_state.auth_user = response.user
+            if hasattr(response, 'session') and response.session:
+                st.session_state.auth_session = response.session
+            return True, None
+        else:
+            return False, "Invalid email or password. Please try again."
+    except Exception as e:
+        error_msg = str(e)
+        if "Invalid login credentials" in error_msg or "invalid" in error_msg.lower() or "credentials" in error_msg.lower():
+            return False, "Invalid email or password. Please try again."
+        elif "Email not confirmed" in error_msg or "not confirmed" in error_msg.lower():
+            return False, "Email not confirmed. Please check your email for a confirmation link."
+        else:
+            return False, "Login failed. Please try again."
+
+
+def is_authed(client: Client) -> bool:
+    """
+    Check if client has a valid authenticated session.
+    
+    Args:
+        client: Supabase client instance
+    
+    Returns:
+        bool: True if authenticated, False otherwise
+    """
+    try:
+        user_response = client.auth.get_user()
+        user = user_response.user if hasattr(user_response, "user") else user_response
+        return user is not None and hasattr(user, "id")
+    except Exception:
+        return False
 
 
 def login(email: str, password: str) -> dict:
@@ -82,6 +138,11 @@ def login(email: str, password: str) -> dict:
         
         # Auth succeeded - proceed with profile lookup
         if response.user:
+            # Log auth response details
+            logging.info(f"sign_in_with_password succeeded | user exists: True | user_id: {response.user.id[:8]}... | email: {response.user.email}")
+            has_session = response.session is not None
+            logging.info(f"sign_in_with_password response.session exists: {has_session}")
+            
             # Store session in st.session_state
             st.session_state.auth_user = response.user
             st.session_state.auth_session = response.session
@@ -108,6 +169,7 @@ def login(email: str, password: str) -> dict:
                     if access_token and refresh_token:
                         try:
                             client.auth.set_session(access_token, refresh_token)
+                            logging.info("Session explicitly set on client after sign_in_with_password")
                         except (TypeError, AttributeError):
                             # Fallback for different API versions
                             try:
@@ -117,8 +179,11 @@ def login(email: str, password: str) -> dict:
                                     "token_type": "bearer"
                                 }
                                 client.auth.set_session(session_dict)
+                                logging.info("Session set on client using dict format (fallback)")
                             except Exception as e:
                                 logging.warning(f"Failed to set session explicitly: {e}")
+                    else:
+                        logging.warning("Session tokens missing - cannot set session explicitly")
                 except Exception as e:
                     logging.warning(f"Session extraction/setting failed: {e}")
                     # Continue - client may already have session from sign_in_with_password
@@ -135,6 +200,7 @@ def login(email: str, password: str) -> dict:
             
             # Load user profile using the SAME client instance that has the session
             # Pass client explicitly to ensure session is used
+            logging.info(f"Attempting profile lookup for user_id: {response.user.id[:8]}... | using provided client with session")
             profile = load_user_profile(response.user.id, client=client)
             if profile:
                 st.session_state.user_profile = profile
@@ -242,10 +308,17 @@ def load_user_profile(user_id: str, client=None) -> dict | None:
     try:
         # Use provided client (with session) or get a new one
         if client is None:
+            logging.info(f"load_user_profile: client not provided, getting new client (will rehydrate session if available)")
             client = get_client(service_role=False)
+            # Log whether rehydration ran (check if get_client rehydrated)
+            if "auth_session" in st.session_state and st.session_state.auth_session:
+                logging.info(f"load_user_profile: session available in st.session_state, client should have rehydrated")
+        else:
+            logging.info(f"load_user_profile: using provided client instance (should have session)")
         
         # Use maybe_single() instead of single() to avoid exception if no row found
         # This is safer and allows us to check for None explicitly
+        logging.info(f"Executing profile query: profiles.select(*).eq(user_id, {user_id[:8]}...).maybe_single()")
         response = (
             client.table("profiles")
             .select("*")
@@ -272,23 +345,36 @@ def load_user_profile(user_id: str, client=None) -> dict | None:
         logging.warning(f"Profile query returned no data for user_id: {user_id[:8]}... | This may indicate profile row is missing or RLS is blocking")
         return None
     except Exception as e:
-        # .single() raises exception if no row found or RLS blocks access
+        # .maybe_single() should not raise exceptions, but handle any that occur
         # Log diagnostic information for debugging
         error_msg = str(e)
         error_type = type(e).__name__
         
+        # Extract error code/message/details if available
+        error_code = None
+        error_details = None
+        if hasattr(e, 'code'):
+            error_code = e.code
+        if hasattr(e, 'message'):
+            error_details = e.message
+        elif hasattr(e, 'details'):
+            error_details = e.details
+        
         # Check for RLS/permission errors specifically
         is_rls_error = (
             "permission denied" in error_msg.lower() or
-            "42501" in error_msg or  # PostgreSQL permission denied error code
+            "42501" in error_msg or
+            (error_code and "42501" in str(error_code)) or
             "RLS" in error_msg.upper() or
             "policy" in error_msg.lower()
         )
         
         logging.error(
-            f"Profile lookup failed for user_id: {user_id[:8]}... | "
+            f"Profile lookup EXCEPTION for user_id: {user_id[:8]}... | "
             f"Error type: {error_type} | "
-            f"Error: {error_msg[:200]} | "
+            f"Error code: {error_code} | "
+            f"Error message: {error_msg[:200]} | "
+            f"Error details: {error_details[:200] if error_details else 'N/A'} | "
             f"RLS/Permission issue: {is_rls_error} | "
             f"Query: profiles.select(*).eq(user_id, {user_id[:8]}...).maybe_single()"
         )
@@ -357,6 +443,115 @@ def is_auditor() -> bool:
     return get_user_role() == ROLE_AUDITOR
 
 
+def establish_recovery_session(query_params: dict) -> tuple[bool, str | None]:
+    """
+    Establish recovery session from query parameters.
+    Handles both code-based (?code=...) and token-based (#access_token=...) flows.
+    
+    Args:
+        query_params: Dictionary of query parameters from st.query_params
+    
+    Returns:
+        tuple: (success: bool, error_message: str | None)
+    """
+    import logging
+    
+    try:
+        client = get_client(service_role=False)
+        
+        # Try code-based flow first
+        if "code" in query_params and query_params["code"]:
+            code = query_params["code"]
+            logging.info("Attempting code-based recovery session (exchange_code_for_session)")
+            try:
+                # Try dict-style first
+                try:
+                    response = client.auth.exchange_code_for_session({"auth_code": code})
+                except TypeError:
+                    # Fallback to positional argument
+                    response = client.auth.exchange_code_for_session(code)
+                
+                # Verify session is valid
+                user_response = client.auth.get_user()
+                user = user_response.user if hasattr(user_response, "user") else user_response
+                
+                if user and hasattr(user, "id"):
+                    # Store session in st.session_state
+                    st.session_state.auth_user = user
+                    if hasattr(response, 'session') and response.session:
+                        st.session_state.auth_session = response.session
+                    elif hasattr(user_response, 'session') and user_response.session:
+                        st.session_state.auth_session = user_response.session
+                    else:
+                        # Create minimal session from tokens if needed
+                        if hasattr(response, 'access_token') and hasattr(response, 'refresh_token'):
+                            class Session:
+                                def __init__(self, access_token, refresh_token):
+                                    self.access_token = access_token
+                                    self.refresh_token = refresh_token
+                            st.session_state.auth_session = Session(response.access_token, response.refresh_token)
+                    
+                    logging.info(f"Code-based recovery session established for user_id: {user.id[:8]}...")
+                    return True, None
+                else:
+                    return False, "Code exchange succeeded but no user returned"
+                    
+            except Exception as e:
+                error_msg = str(e)
+                logging.error(f"Code-based recovery session failed: {error_msg[:200]}")
+                return False, error_msg[:200]
+        
+        # Try token-based flow
+        elif ("access_token" in query_params and query_params["access_token"]) and \
+             ("refresh_token" in query_params and query_params["refresh_token"]):
+            access_token = query_params["access_token"]
+            refresh_token = query_params["refresh_token"]
+            logging.info("Attempting token-based recovery session (set_session)")
+            
+            try:
+                # Set session using recovery tokens
+                try:
+                    response = client.auth.set_session(access_token, refresh_token)
+                except (TypeError, AttributeError):
+                    # Fallback for older API versions
+                    session_dict = {
+                        "access_token": access_token,
+                        "refresh_token": refresh_token,
+                        "token_type": "bearer"
+                    }
+                    response = client.auth.set_session(session_dict)
+                
+                # Verify session is valid
+                user_response = client.auth.get_user()
+                user = user_response.user if hasattr(user_response, "user") else user_response
+                
+                if user and hasattr(user, "id"):
+                    # Store session in st.session_state
+                    st.session_state.auth_user = user
+                    if hasattr(response, 'session') and response.session:
+                        st.session_state.auth_session = response.session
+                    elif hasattr(user_response, 'session') and user_response.session:
+                        st.session_state.auth_session = user_response.session
+                    
+                    logging.info(f"Token-based recovery session established for user_id: {user.id[:8]}...")
+                    return True, None
+                else:
+                    return False, "Session set but no user returned"
+                    
+            except Exception as e:
+                error_msg = str(e)
+                logging.error(f"Token-based recovery session failed: {error_msg[:200]}")
+                return False, error_msg[:200]
+        
+        else:
+            return False, "No recovery code or tokens found in query parameters"
+            
+    except Exception as e:
+        error_msg = str(e)
+        logging.error(f"Recovery session establishment exception: {error_msg[:200]}")
+        return False, error_msg[:200]
+
+
 def reset_password(new_password: str, access_token: str = None, refresh_token: str = None) -> tuple[bool, str]:
     """
     Reset user password using recovery token.
@@ -414,4 +609,68 @@ def reset_password(new_password: str, access_token: str = None, refresh_token: s
             return False, "Password reset failed. Please check password requirements and try again."
         else:
             return False, "Password reset failed. Please try again."
+
+
+def update_password(new_password: str) -> tuple[bool, str]:
+    """
+    Update user password using authenticated session.
+    After successful update, user remains logged in.
+    
+    Args:
+        new_password: New password to set
+    
+    Returns:
+        tuple: (success: bool, error_message: str)
+    """
+    import logging
+    
+    try:
+        client = get_client(service_role=False)
+        
+        # Verify we have a valid session
+        try:
+            user_response = client.auth.get_user()
+            user = user_response.user if hasattr(user_response, "user") else user_response
+            if not user or not hasattr(user, "id"):
+                return False, "No authenticated session found. Please use the password reset link from your email."
+        except Exception:
+            return False, "Session expired. Please request a new password reset link."
+        
+        # Update password using supabase-py update_user method
+        # Reference: https://supabase.com/docs/reference/python/auth-updateuser
+        response = client.auth.update_user({"password": new_password})
+        
+        if response and hasattr(response, 'user') and response.user:
+            # Update session state with new user object (password updated)
+            st.session_state.auth_user = response.user
+            if hasattr(response, 'session') and response.session:
+                st.session_state.auth_session = response.session
+            
+            # Load user profile after password update
+            profile = load_user_profile(response.user.id, client=client)
+            if profile:
+                st.session_state.user_profile = profile
+            
+            logging.info(f"Password updated successfully for user_id: {response.user.id[:8]}...")
+            
+            # Clear any stale error messages
+            if "last_login_error" in st.session_state:
+                del st.session_state.last_login_error
+            
+            return True, ""
+        else:
+            logging.warning("Password update returned no user")
+            return False, "Password update failed. Please try again."
+            
+    except Exception as e:
+        error_msg = str(e)
+        logging.error(f"Password update exception: {error_msg[:300]}")
+        
+        # Provide user-friendly error messages
+        if "password" in error_msg.lower() and ("weak" in error_msg.lower() or "requirements" in error_msg.lower()):
+            return False, "Password does not meet requirements. Please use a stronger password."
+        elif "session" in error_msg.lower() or "token" in error_msg.lower() or "expired" in error_msg.lower():
+            return False, "Session expired. Please request a new password reset link."
+        else:
+            return False, "Password update failed. Please try again or contact support."
 
