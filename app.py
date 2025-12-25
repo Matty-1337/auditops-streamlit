@@ -170,24 +170,30 @@ def show_login_page():
                 with st.spinner("Logging in..."):
                     result = login(email, password)
                     
-                    # Use structured result to show correct error message
-                    if result.get("ok"):
+                    # CRITICAL: result is ALWAYS a dict with structured fields
+                    # Never show multiple errors - use structured result to show ONLY the correct one
+                    if not isinstance(result, dict):
+                        # Fallback if result is not a dict (shouldn't happen)
+                        st.error("Login failed. Please try again.")
+                    elif result.get("ok"):
                         st.success("Login successful!")
                         st.rerun()
                     else:
-                        # Show error based on structured result
+                        # Show ONLY ONE error based on structured result
+                        error_msg = result.get("error", "Login failed. Please try again.")
+                        
                         if not result.get("auth_ok"):
-                            # Auth failed
-                            st.error(result.get("error", "Invalid email or password. Please try again."))
+                            # Auth failed - show ONLY auth error
+                            st.error(error_msg)
                         elif not result.get("profile_ok"):
-                            # Auth succeeded but profile missing
-                            st.warning(f"⚠️ {result.get('error', 'User profile not found. Please contact an administrator.')}")
+                            # Auth succeeded but profile missing - show ONLY profile warning
+                            st.warning(f"⚠️ {error_msg}")
                             # Still allow login - profile missing doesn't block auth
                             st.info("You are authenticated, but some features may be limited.")
                             st.rerun()
                         else:
                             # Shouldn't happen, but handle gracefully
-                            st.error(result.get("error", "Login failed. Please try again."))
+                            st.error(error_msg)
     
     # Optional: Forgot password button
     st.markdown("---")

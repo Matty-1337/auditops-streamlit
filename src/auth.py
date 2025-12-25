@@ -28,13 +28,59 @@ def login(email: str, password: str) -> dict:
     """
     import logging
     
+    # CRITICAL: Never show errors directly - always return structured result
+    # This prevents multiple error messages from appearing
+    
     try:
         client = get_client(service_role=False)
-        response = client.auth.sign_in_with_password({
-            "email": email,
-            "password": password
-        })
         
+        # Attempt sign in - this can raise an exception on failure
+        try:
+            response = client.auth.sign_in_with_password({
+                "email": email,
+                "password": password
+            })
+        except Exception as auth_error:
+            # Catch auth-specific errors and return structured result immediately
+            error_msg = str(auth_error)
+            error_type = type(auth_error).__name__
+            logging.error(f"sign_in_with_password failed (type: {error_type}): {error_msg[:300]}")
+            
+            # Determine error message based on exception
+            if "Invalid login credentials" in error_msg or "invalid" in error_msg.lower() or "credentials" in error_msg.lower():
+                error_text = "Invalid email or password. Please try again."
+            elif "Email not confirmed" in error_msg or "not confirmed" in error_msg.lower():
+                error_text = "Email not confirmed. Please check your email for a confirmation link."
+            elif "email" in error_msg.lower() and ("not found" in error_msg.lower() or "does not exist" in error_msg.lower()):
+                error_text = "Email address not found. Please contact an administrator."
+            else:
+                error_text = "Invalid email or password. Please try again."
+            
+            # Return immediately - do not continue
+            return {
+                "ok": False,
+                "auth_ok": False,
+                "profile_ok": False,
+                "error": error_text,
+                "user": None,
+                "session": None,
+                "profile": None
+            }
+        
+        # Check if response has user (should always be present on success)
+        if not hasattr(response, 'user') or response.user is None:
+            logging.error("sign_in_with_password returned response without user object")
+            return {
+                "ok": False,
+                "auth_ok": False,
+                "profile_ok": False,
+                "error": "Invalid email or password. Please try again.",
+                "user": None,
+                "session": None,
+                "profile": None
+            }
+        
+        # Auth succeeded - proceed with profile lookup
         if response.user:
             # Store session in st.session_state
             st.session_state.auth_user = response.user
@@ -198,15 +244,17 @@ def load_user_profile(user_id: str, client=None) -> dict | None:
         if client is None:
             client = get_client(service_role=False)
         
+        # Use maybe_single() instead of single() to avoid exception if no row found
+        # This is safer and allows us to check for None explicitly
         response = (
             client.table("profiles")
             .select("*")
             .eq("user_id", user_id)
-            .single()
+            .maybe_single()
             .execute()
         )
         
-        # Handle response.data - could be a dict (single row) or list with one item
+        # Handle response.data - maybe_single() returns None if no row found, or dict if found
         profile_data = None
         if response.data:
             if isinstance(response.data, dict):
@@ -217,11 +265,11 @@ def load_user_profile(user_id: str, client=None) -> dict | None:
                 logging.warning(f"Unexpected response.data type: {type(response.data)} for user_id: {user_id[:8]}...")
         
         if profile_data:
-            logging.info(f"Profile loaded successfully for user_id: {user_id[:8]}...")
+            logging.info(f"Profile loaded successfully for user_id: {user_id[:8]}... | role: {profile_data.get('role', 'N/A')}")
             return profile_data
         
-        # This shouldn't happen with .single() - it raises exception if not found
-        logging.warning(f"Profile query returned no data for user_id: {user_id[:8]}...")
+        # No profile found - this is expected if profile doesn't exist
+        logging.warning(f"Profile query returned no data for user_id: {user_id[:8]}... | This may indicate profile row is missing or RLS is blocking")
         return None
     except Exception as e:
         # .single() raises exception if no row found or RLS blocks access
