@@ -257,14 +257,17 @@ def show_forgot_password():
                         email,
                         options={"redirect_to": app_url}
                     )
-                    st.success(f"✅ Password reset link sent to {email}. Please check your email.")
+                    # Security: Always show same message to prevent email enumeration
+                    # Supabase will send email if address exists, but we don't reveal this
+                    st.success("✅ If that email address exists, a password reset link has been sent. Please check your email.")
                     st.info("💡 Note: You can also contact an administrator to reset your password.")
                 except Exception as e:
+                    # Security: Never reveal whether email exists - always show generic message
                     error_msg = str(e)
-                    if "not found" in error_msg.lower() or "does not exist" in error_msg.lower():
-                        st.error("Email address not found. Please contact an administrator.")
-                    else:
-                        st.error("Failed to send reset link. Please try again or contact support.")
+                    logging.warning(f"Password reset email request failed: {error_msg[:200]}")
+                    # Show generic message regardless of error type
+                    st.success("✅ If that email address exists, a password reset link has been sent. Please check your email.")
+                    st.info("💡 Note: If you don't receive an email, check your spam folder or contact an administrator.")
     
     if st.button("Back to Login", use_container_width=True):
         st.rerun()
