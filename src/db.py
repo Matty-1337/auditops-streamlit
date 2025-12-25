@@ -66,7 +66,8 @@ def _check_clients_app_exists() -> bool:
         return _clients_app_exists
     client = get_client(service_role=False)
     try:
-        client.table("clients_app").select("id").limit(1).execute()
+        # Schema-agnostic check - doesn't assume id column exists
+        client.table("clients_app").select("*").limit(1).execute()
         _clients_app_exists = True
     except Exception:
         _clients_app_exists = False
