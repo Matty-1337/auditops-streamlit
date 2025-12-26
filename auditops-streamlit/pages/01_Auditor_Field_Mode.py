@@ -169,6 +169,39 @@ with col1:
                     else:
                         st.markdown("📶 None")
 
+                    # Site Access Codes Section
+                    st.markdown("---")
+                    st.markdown("### Site Access Codes:")
+                    col1, col2 = st.columns(2)
+
+                    with col1:
+                        if client_detail.get('alarm_code'):
+                            st.markdown(f"🚨 **Alarm Code:** {client_detail.get('alarm_code')}")
+                        else:
+                            st.markdown("🚨 **Alarm Code:** None")
+
+                        if client_detail.get('code_for_lights'):
+                            st.markdown(f"💡 **Code for Lights:** {client_detail.get('code_for_lights')}")
+                        else:
+                            st.markdown("💡 **Code for Lights:** None")
+
+                    with col2:
+                        if client_detail.get('lockbox_code'):
+                            st.markdown(f"🔒 **Lock Box Code:** {client_detail.get('lockbox_code')}")
+                        else:
+                            st.markdown("🔒 **Lock Box Code:** None")
+
+                        if client_detail.get('cage_lock_code'):
+                            st.markdown(f"🔐 **CAGE LOCK/PAD LOCK:** {client_detail.get('cage_lock_code')}")
+                        else:
+                            st.markdown("🔐 **CAGE LOCK/PAD LOCK:** None")
+
+                    # Audit Schedule Section
+                    if client_detail.get('audit_day'):
+                        st.markdown("---")
+                        st.markdown("### Audit Schedule:")
+                        st.markdown(f"📅 **Audit Day:** {client_detail.get('audit_day')}")
+
                     # Special Instructions Section
                     if client_detail.get('special_instructions'):
                         st.markdown("---")

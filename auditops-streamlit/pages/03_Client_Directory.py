@@ -98,6 +98,31 @@ else:
                     if client.get('wifi_password'):
                         st.write(f"🔑 Password: {client.get('wifi_password')}")
 
+                # Site Access Codes
+                has_codes = any([
+                    client.get('alarm_code'),
+                    client.get('lockbox_code'),
+                    client.get('code_for_lights'),
+                    client.get('cage_lock_code')
+                ])
+                if has_codes:
+                    st.markdown("---")
+                    st.markdown("**Site Access Codes:**")
+                    if client.get('alarm_code'):
+                        st.write(f"🚨 Alarm Code: {client.get('alarm_code')}")
+                    if client.get('lockbox_code'):
+                        st.write(f"🔒 Lock Box Code: {client.get('lockbox_code')}")
+                    if client.get('code_for_lights'):
+                        st.write(f"💡 Code for Lights: {client.get('code_for_lights')}")
+                    if client.get('cage_lock_code'):
+                        st.write(f"🔐 CAGE LOCK/PAD LOCK: {client.get('cage_lock_code')}")
+
+                # Audit Schedule
+                if client.get('audit_day'):
+                    st.markdown("---")
+                    st.markdown("**Audit Schedule:**")
+                    st.write(f"📅 Audit Day: {client.get('audit_day')}")
+
                 # Special instructions
                 if client.get('special_instructions'):
                     st.markdown("---")
