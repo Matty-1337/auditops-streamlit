@@ -60,12 +60,18 @@ def require_role(allowed_roles: list[str] | str):
 
     user_role = get_user_role()
 
-    # ADMIN has access to ALL pages
-    if user_role == ROLE_ADMIN:
+    # Strip whitespace and normalize role for comparison
+    user_role_normalized = user_role.strip().upper() if user_role else ""
+
+    # ADMIN has access to ALL pages - check multiple ways to be safe
+    if user_role_normalized == "ADMIN" or user_role == ROLE_ADMIN:
         return
 
-    # Check if user has required role
-    if user_role not in allowed_roles:
+    # Also normalize allowed roles for comparison
+    allowed_roles_normalized = [r.strip().upper() if isinstance(r, str) else r for r in allowed_roles]
+
+    # Check if user has required role (case-insensitive)
+    if user_role_normalized not in allowed_roles_normalized:
         st.error(f"🚫 Access Denied: This page requires {' or '.join(allowed_roles)} role.")
         st.info(f"Your role: {user_role}")
         if st.button("Go Back to Home"):
