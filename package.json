@@ -1,0 +1,24 @@
+{
+  "name": "auditops-streamlit",
+  "version": "1.0.0",
+  "description": "A comprehensive operations portal for auditors, administrators, and managers built with Streamlit and Supabase. This internal employee and client operations system provides role-based access control, time tracking, pay period management, approvals, and client data access.",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Matty-1337/auditops-streamlit.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs",
+  "bugs": {
+    "url": "https://github.com/Matty-1337/auditops-streamlit/issues"
+  },
+  "homepage": "https://github.com/Matty-1337/auditops-streamlit#readme",
+  "dependencies": {
+    "@supabase/supabase-js": "^2.89.0"
+  }
+}
