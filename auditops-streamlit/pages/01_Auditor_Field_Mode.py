@@ -196,13 +196,17 @@ with col1:
             clients = get_all_clients(active_only=True)
             client_options = {c["name"]: c["id"] for c in clients}
             client_names = list(client_options.keys())
-            
+
             if not client_names:
                 st.warning("No active clients available. Contact an administrator.")
+                selected_client = None
+                notes = ""
+                # Always include submit button (disabled when no clients)
+                st.form_submit_button("✅ Check In", type="primary", use_container_width=True, disabled=True)
             else:
                 selected_client = st.selectbox("Select Client", [""] + client_names)
                 notes = st.text_area("Notes (optional)", placeholder="Add any notes about this shift...")
-                
+
                 if st.form_submit_button("✅ Check In", type="primary", use_container_width=True):
                     if not selected_client:
                         st.error("Please select a client.")

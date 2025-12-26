@@ -126,19 +126,45 @@ def get_client_by_id(client_id: str) -> Optional[Dict]:
 
 def get_all_clients(active_only: bool = True) -> List[Dict]:
     """Get all clients."""
+    import logging
     client = get_client(service_role=False)
+
     if _check_clients_app_exists():
-        query = client.table("clients_app").select("id, name, is_active")
-        if active_only:
-            query = query.eq("is_active", True)
-        response = query.order("name").execute()
-        return response.data or []
-    else:
+        try:
+            query = client.table("clients_app").select("id, name, is_active")
+            if active_only:
+                query = query.eq("is_active", True)
+            response = query.order("name").execute()
+            return response.data or []
+        except Exception as e:
+            logging.error(f"[DB] get_all_clients failed on clients_app: {str(e)}")
+            # Fall through to try regular clients table
+
+    # Try regular clients table (with or without clients_app failure)
+    try:
         query = client.table("clients").select("*")
         if active_only:
             query = query.eq("is_active", True)
         response = query.order("name").execute()
         return [_normalize_client_row(row) for row in (response.data or [])]
+    except Exception as e:
+        logging.error(f"[DB] get_all_clients failed on clients table: {str(e)}")
+
+        # Try with service role as last resort
+        try:
+            logging.info("[DB] Retrying clients query with service role...")
+            service_client = get_client(service_role=True)
+            query = service_client.table("clients").select("*")
+            if active_only:
+                query = query.eq("is_active", True)
+            response = query.order("name").execute()
+            logging.info(f"[DB] Service role query succeeded, got {len(response.data or [])} clients")
+            return [_normalize_client_row(row) for row in (response.data or [])]
+        except Exception as service_err:
+            logging.error(f"[DB] Service role query also failed: {str(service_err)}")
+            # Return empty list rather than crashing the app
+            logging.warning("[DB] Returning empty client list due to all queries failing")
+            return []
 
 
 def create_client(data: Dict, use_service_role: bool = True) -> Optional[Dict]:
