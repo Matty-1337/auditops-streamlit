@@ -3,8 +3,8 @@ Auditor Field Mode - Check in/out and manage shifts.
 """
 import streamlit as st
 from datetime import datetime, timezone, timedelta
-from src.auth import require_authentication, get_current_user, get_current_profile
-from src.config import require_role_access, ROLE_AUDITOR, SHIFT_STATUS_DRAFT, SHIFT_STATUS_SUBMITTED
+from src.pin_auth import require_authentication, require_role, get_current_user
+from src.config import ROLE_AUDITOR, SHIFT_STATUS_DRAFT, SHIFT_STATUS_SUBMITTED
 from src.db import (
     get_shifts_by_auditor, create_shift, update_shift, submit_shift,
     get_all_clients, get_client_secrets, log_secrets_access
@@ -16,12 +16,11 @@ st.set_page_config(page_title="Field Mode", layout="wide")
 
 # Authentication and role check
 require_authentication()
-require_role_access(ROLE_AUDITOR)
+require_role(ROLE_AUDITOR)
 
 # Get current user
 user = get_current_user()
-profile = get_current_profile()
-auditor_id = user.id if user else None
+auditor_id = user.get('id') if user else None
 
 if not auditor_id:
     st.error("User not found. Please log out and log back in.")
@@ -43,14 +42,12 @@ except Exception as e:
     with st.expander("🔍 Diagnostic Information"):
         st.write("**User Information:**")
         st.write(f"- User ID: {auditor_id}")
-        st.write(f"- Email: {user.email if user else 'N/A'}")
-        st.write(f"- Profile Role: {profile.get('role') if profile else 'N/A'}")
-        st.write(f"- Profile Active: {profile.get('is_active') if profile else 'N/A'}")
+        st.write(f"- Name: {user.get('name') if user else 'N/A'}")
+        st.write(f"- Role: {user.get('role') if user else 'N/A'}")
 
         st.write("\n**Troubleshooting Steps:**")
         st.write("1. Verify your profile has the 'AUDITOR' role in the database")
-        st.write("2. Check that your profile is marked as active")
-        st.write("3. Contact an administrator to verify your permissions")
+        st.write("2. Contact an administrator to verify your permissions")
 
     st.stop()
 

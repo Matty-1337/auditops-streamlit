@@ -2,8 +2,8 @@
 Admin Secrets Access Log - View access logs for protected documents.
 """
 import streamlit as st
-from src.auth import require_authentication
-from src.config import require_role_access, ROLE_ADMIN
+from src.pin_auth import require_authentication, require_role
+from src.config import ROLE_ADMIN
 from src.db import get_access_logs, get_all_clients
 from src.utils import format_datetime, get_user_display_name, get_client_display_name
 import pandas as pd
@@ -13,7 +13,7 @@ st.set_page_config(page_title="Access Log", layout="wide")
 
 # Authentication and role check
 require_authentication()
-require_role_access(ROLE_ADMIN)
+require_role(ROLE_ADMIN)
 
 st.title("🔒 Secrets Access Log")
 st.markdown("Monitor access to protected client documents and sensitive data.")

@@ -3,8 +3,8 @@ Admin Pay Periods - Manage pay periods and generate summaries.
 """
 import streamlit as st
 from datetime import date, timedelta
-from src.auth import require_authentication
-from src.config import require_role_access, ROLE_ADMIN, PAY_PERIOD_OPEN, PAY_PERIOD_LOCKED
+from src.pin_auth import require_authentication, require_role
+from src.config import ROLE_ADMIN, PAY_PERIOD_OPEN, PAY_PERIOD_LOCKED
 from src.db import (
     get_all_pay_periods, create_pay_period, lock_pay_period, get_pay_items_by_period,
     get_all_pay_periods as get_periods, get_shifts_by_auditor
@@ -18,7 +18,7 @@ st.set_page_config(page_title="Pay Periods", layout="wide")
 
 # Authentication and role check
 require_authentication()
-require_role_access(ROLE_ADMIN)
+require_role(ROLE_ADMIN)
 
 st.title("📅 Pay Periods")
 st.markdown("Create and manage pay periods.")

@@ -2,8 +2,8 @@
 Auditor My Pay - View pay history and statements.
 """
 import streamlit as st
-from src.auth import require_authentication, get_current_user
-from src.config import require_role_access, ROLE_AUDITOR
+from src.pin_auth import require_authentication, require_role, get_current_user
+from src.config import ROLE_AUDITOR
 from src.db import get_pay_items_by_auditor, get_all_pay_periods
 from src.utils import format_date, format_currency, format_duration
 from src.pdf_statements import generate_pay_statement_pdf
@@ -14,11 +14,11 @@ st.set_page_config(page_title="My Pay", layout="wide")
 
 # Authentication and role check
 require_authentication()
-require_role_access(ROLE_AUDITOR)
+require_role(ROLE_AUDITOR)
 
 # Get current user
 user = get_current_user()
-auditor_id = user.id if user else None
+auditor_id = user.get('id') if user else None
 
 if not auditor_id:
     st.error("User not found. Please log out and log back in.")

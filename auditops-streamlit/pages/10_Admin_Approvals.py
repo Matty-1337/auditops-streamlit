@@ -2,8 +2,8 @@
 Admin/Manager Approvals - Review and approve submitted shifts.
 """
 import streamlit as st
-from src.auth import require_authentication, get_current_user, get_current_profile
-from src.config import require_role_access, ROLE_MANAGER, ROLE_ADMIN, SHIFT_STATUS_SUBMITTED, SHIFT_STATUS_APPROVED, SHIFT_STATUS_REJECTED
+from src.pin_auth import require_authentication, require_role, get_current_user
+from src.config import ROLE_MANAGER, ROLE_ADMIN, SHIFT_STATUS_SUBMITTED, SHIFT_STATUS_APPROVED, SHIFT_STATUS_REJECTED
 from src.db import get_submitted_shifts, get_shift, create_approval, get_approvals_by_shift
 from src.utils import format_datetime, format_duration, calculate_hours, get_client_display_name, get_user_display_name
 
@@ -12,11 +12,11 @@ st.set_page_config(page_title="Approvals", layout="wide")
 
 # Authentication and role check
 require_authentication()
-require_role_access([ROLE_MANAGER, ROLE_ADMIN])
+require_role([ROLE_MANAGER, ROLE_ADMIN])
 
 # Get current user
 user = get_current_user()
-approver_id = user.id if user else None
+approver_id = user.get('id') if user else None
 
 if not approver_id:
     st.error("User not found.")

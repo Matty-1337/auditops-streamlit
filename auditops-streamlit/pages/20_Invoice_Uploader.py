@@ -17,12 +17,17 @@ except ImportError:
     st.error("Error importing invoice_engine module. Please ensure invoice_engine.py is in the project root.")
     st.stop()
 
+from src.pin_auth import require_authentication
+
 # Page configuration
 st.set_page_config(
     page_title="Invoice Uploader",
     page_icon="📄",
     layout="wide"
 )
+
+# Authentication check - all logged-in users can access
+require_authentication()
 
 st.title("📄 Invoice Uploader")
 st.markdown("---")
