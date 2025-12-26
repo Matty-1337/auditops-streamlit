@@ -484,8 +484,8 @@ def get_approval(approval_id: str) -> Optional[Dict]:
 
 def get_approvals_by_shift(shift_id: str) -> List[Dict]:
     """Get approvals for a shift."""
-    client = get_client(service_role=False)
-    response = client.table("approvals").select("*, approver:profiles(*)").eq("shift_id", shift_id).order("decided_at", desc=True).execute()
+    client = get_client(service_role=True)
+    response = client.table("approvals").select("*, approver:profiles(*)").eq("shift_id", shift_id).order("created_at", desc=True).execute()
     return response.data or []
 
 
