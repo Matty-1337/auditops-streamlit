@@ -186,7 +186,7 @@ with col1:
                 st.error("Failed to submit shift.")
     else:
         st.info("No active shift. Check in to start a new shift.")
-        
+
         # Check in form
         with st.form("check_in_form"):
             st.subheader("Check In")
@@ -202,6 +202,41 @@ with col1:
                 st.form_submit_button("✅ Check In", type="primary", use_container_width=True, disabled=True)
             else:
                 selected_client = st.selectbox("Select Client", [""] + client_names)
+
+                # Show client details when selected
+                if selected_client:
+                    st.markdown("---")
+                    st.markdown("### 📋 Client Information")
+                    selected_client_id = client_options[selected_client]
+
+                    # Get full client details
+                    client_detail = next((c for c in clients if c["id"] == selected_client_id), None)
+                    if client_detail:
+                        st.markdown(f"**Name:** {client_detail.get('name', 'N/A')}")
+                        st.markdown(f"**Address:** {client_detail.get('address', 'N/A')}")
+
+                        if client_detail.get('contact_person'):
+                            st.markdown(f"**Contact:** {client_detail.get('contact_person')}")
+                        if client_detail.get('contact_phone'):
+                            st.markdown(f"**Phone:** {client_detail.get('contact_phone')}")
+                        if client_detail.get('contact_email'):
+                            st.markdown(f"**Email:** {client_detail.get('contact_email')}")
+
+                        if client_detail.get('wifi_name'):
+                            st.markdown(f"**WiFi:** {client_detail.get('wifi_name')}")
+                            if client_detail.get('wifi_password'):
+                                st.markdown(f"**WiFi Password:** {client_detail.get('wifi_password')}")
+
+                        if client_detail.get('special_instructions'):
+                            st.info(f"**Special Instructions:** {client_detail.get('special_instructions')}")
+
+                        if client_detail.get('notes'):
+                            st.markdown(f"**Notes:** {client_detail.get('notes')}")
+
+                        # Show hint about secrets
+                        st.caption("💡 Additional site codes (alarm, lockbox) available after check-in")
+                    st.markdown("---")
+
                 notes = st.text_area("Notes (optional)", placeholder="Add any notes about this shift...")
 
                 if st.form_submit_button("✅ Check In", type="primary", use_container_width=True):
@@ -210,7 +245,7 @@ with col1:
                     else:
                         client_id = client_options[selected_client]
                         check_in_time = datetime.now(timezone.utc)
-                        
+
                         shift_data = {
                             "auditor_id": auditor_id,
                             "client_id": client_id,
@@ -218,7 +253,7 @@ with col1:
                             "status": SHIFT_STATUS_DRAFT,
                             "notes": notes if notes else None
                         }
-                        
+
                         result = create_shift(shift_data)
                         if result:
                             st.success("Checked in successfully!")

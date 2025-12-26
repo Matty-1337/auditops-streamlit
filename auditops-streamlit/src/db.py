@@ -126,24 +126,26 @@ def get_client_by_id(client_id: str) -> Optional[Dict]:
 
 def get_all_clients(active_only: bool = True) -> List[Dict]:
     """
-    Get all clients from database.
+    Get all clients from database with full details.
 
     Database schema:
     - client_id (uuid)
-    - client_name (text)  
+    - client_name (text)
     - active (boolean)
+    - address, contact_person, contact_email, contact_phone
+    - wifi_name, wifi_password, special_instructions
     """
     client = get_client(service_role=True)
 
-    # Query exact columns from schema
-    query = client.table("clients").select("client_id, client_name, active, address, notes")
+    # Query all client columns
+    query = client.table("clients").select("*")
 
     if active_only:
         query = query.eq("active", True)
 
     response = query.order("client_name").execute()
 
-    # Map to expected format
+    # Map to expected format with all fields
     result = []
     for row in (response.data or []):
         result.append({
@@ -151,7 +153,13 @@ def get_all_clients(active_only: bool = True) -> List[Dict]:
             "name": row["client_name"],
             "is_active": row["active"],
             "address": row.get("address"),
-            "notes": row.get("notes")
+            "notes": row.get("notes"),
+            "contact_person": row.get("contact_person"),
+            "contact_email": row.get("contact_email"),
+            "contact_phone": row.get("contact_phone"),
+            "wifi_name": row.get("wifi_name"),
+            "wifi_password": row.get("wifi_password"),
+            "special_instructions": row.get("special_instructions")
         })
 
     return result
