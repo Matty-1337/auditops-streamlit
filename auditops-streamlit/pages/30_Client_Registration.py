@@ -32,6 +32,26 @@ with st.form("client_registration"):
     st.caption("This information can be added later by administrators")
     wifi_name = st.text_input("WiFi Network Name", placeholder="AcmeCorp-Guest")
     wifi_password = st.text_input("WiFi Password", type="password", placeholder="Optional")
+
+    # Site Access Codes
+    st.markdown("### Site Access Codes (Optional)")
+    col1, col2 = st.columns(2)
+    with col1:
+        alarm_code = st.text_input("Alarm Code", placeholder="1234", help="Numbers only")
+        code_for_lights = st.text_input("Code for Lights", placeholder="5678", help="Numbers only")
+    with col2:
+        lockbox_code = st.text_input("Lock Box Code", placeholder="9012", help="Numbers only")
+        cage_lock_code = st.text_input("CAGE LOCK/PAD LOCK", placeholder="3456", help="Numbers only")
+
+    # Audit Day
+    st.markdown("### Audit Schedule")
+    audit_day = st.selectbox(
+        "Audit Day",
+        ["", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"],
+        help="Select the primary day for audits"
+    )
+
+    # Special Instructions
     special_instructions = st.text_area("Special Instructions/Notes",
                                        placeholder="Gate codes, parking info, check-in procedures, etc.")
 
@@ -58,6 +78,11 @@ with st.form("client_registration"):
                     "contact_phone": contact_phone,
                     "wifi_name": wifi_name if wifi_name else None,
                     "wifi_password": wifi_password if wifi_password else None,
+                    "alarm_code": alarm_code if alarm_code else None,
+                    "lockbox_code": lockbox_code if lockbox_code else None,
+                    "code_for_lights": code_for_lights if code_for_lights else None,
+                    "cage_lock_code": cage_lock_code if cage_lock_code else None,
+                    "audit_day": audit_day if audit_day else None,
                     "special_instructions": special_instructions if special_instructions else None,
                     "active": False,  # Not active until approved
                     "approval_status": "pending",
