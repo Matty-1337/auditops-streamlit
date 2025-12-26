@@ -14,7 +14,7 @@ def format_datetime(dt: Optional[datetime | str], format_str: str = "%Y-%m-%d %H
     if isinstance(dt, str):
         try:
             dt = datetime.fromisoformat(dt.replace("Z", "+00:00"))
-        except:
+        except ValueError:
             return dt
     
     if isinstance(dt, datetime):
@@ -31,7 +31,7 @@ def format_date(d: Optional[date | str], format_str: str = "%Y-%m-%d") -> str:
     if isinstance(d, str):
         try:
             d = date.fromisoformat(d)
-        except:
+        except ValueError:
             return d
     
     if isinstance(d, date):
@@ -48,7 +48,7 @@ def format_currency(amount: Optional[float | str], currency: str = "$") -> str:
     try:
         amount = float(amount)
         return f"{currency}{amount:,.2f}"
-    except:
+    except (ValueError, TypeError):
         return f"{currency}0.00"
 
 
@@ -64,7 +64,7 @@ def format_duration(hours: Optional[float]) -> str:
         if m > 0:
             return f"{h}h {m}m"
         return f"{h}h"
-    except:
+    except (ValueError, TypeError):
         return "0h"
 
 
