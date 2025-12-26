@@ -489,7 +489,7 @@ def get_approvals_by_shift(shift_id: str) -> List[Dict]:
     return response.data or []
 
 
-def create_approval(shift_id: str, approver_id: str, decision: str, notes: Optional[str] = None, use_service_role: bool = False) -> Optional[Dict]:
+def create_approval(shift_id: str, approver_id: str, decision: str, notes: Optional[str] = None, use_service_role: bool = True) -> Optional[Dict]:
     """Create an approval decision."""
     client = get_client(service_role=use_service_role)
     data = {
