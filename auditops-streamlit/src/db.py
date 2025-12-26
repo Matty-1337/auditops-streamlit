@@ -127,7 +127,7 @@ def get_client_by_id(client_id: str) -> Optional[Dict]:
 def get_all_clients(active_only: bool = True) -> List[Dict]:
     """Get all clients."""
     import logging
-    client = get_client(service_role=False)
+    client = get_client(service_role=True)  # Use service role for reliable access
 
     if _check_clients_app_exists():
         try:
@@ -144,8 +144,9 @@ def get_all_clients(active_only: bool = True) -> List[Dict]:
     try:
         query = client.table("clients").select("*")
         if active_only:
-            query = query.eq("is_active", True)
-        response = query.order("name").execute()
+            # Use 'active' column (actual schema) instead of 'is_active'
+            query = query.eq("active", True)
+        response = query.order("client_name").execute()
         return [_normalize_client_row(row) for row in (response.data or [])]
     except Exception as e:
         logging.error(f"[DB] get_all_clients failed on clients table: {str(e)}")
