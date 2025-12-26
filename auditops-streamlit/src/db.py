@@ -179,12 +179,47 @@ def get_shift(shift_id: str) -> Optional[Dict]:
 
 def get_shifts_by_auditor(auditor_id: str, status: Optional[str] = None) -> List[Dict]:
     """Get shifts for an auditor."""
+    import logging
     client = get_client(service_role=False)
-    query = client.table("shifts").select("*, client:clients(*)").eq("auditor_id", auditor_id)
-    if status:
-        query = query.eq("status", status)
-    response = query.order("check_in", desc=True).execute()
-    return response.data or []
+
+    try:
+        query = client.table("shifts").select("*, client:clients(*)").eq("auditor_id", auditor_id)
+        if status:
+            query = query.eq("status", status)
+        response = query.order("check_in", desc=True).execute()
+        return response.data or []
+    except Exception as e:
+        # Log the actual error for debugging
+        logging.error(f"[DB] get_shifts_by_auditor failed for auditor {auditor_id}: {str(e)}")
+
+        # Try without the client join to isolate the issue
+        try:
+            logging.info("[DB] Retrying query without client join...")
+            query = client.table("shifts").select("*").eq("auditor_id", auditor_id)
+            if status:
+                query = query.eq("status", status)
+            response = query.order("check_in", desc=True).execute()
+
+            # If this works, the issue is with the clients table join
+            shifts = response.data or []
+            logging.info(f"[DB] Query without join succeeded, got {len(shifts)} shifts")
+
+            # Manually fetch client data for each shift
+            if shifts:
+                for shift in shifts:
+                    if shift.get('client_id'):
+                        try:
+                            client_response = client.table("clients").select("*").eq("id", shift['client_id']).execute()
+                            if client_response.data:
+                                shift['client'] = client_response.data[0]
+                        except Exception as client_err:
+                            logging.warning(f"[DB] Could not fetch client {shift['client_id']}: {client_err}")
+                            shift['client'] = None
+
+            return shifts
+        except Exception as retry_err:
+            logging.error(f"[DB] Retry also failed: {str(retry_err)}")
+            raise Exception(f"Database query failed. Please check your profile permissions and ensure you have the AUDITOR role set correctly. Error: {str(e)}")
 
 
 def get_submitted_shifts(use_service_role: bool = False) -> List[Dict]:
