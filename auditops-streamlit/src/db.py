@@ -250,9 +250,55 @@ def get_shifts_by_auditor(auditor_id: str, status: Optional[str] = None) -> List
 
 def get_submitted_shifts(use_service_role: bool = False) -> List[Dict]:
     """Get all submitted shifts awaiting approval."""
+    import logging
     client = get_client(service_role=use_service_role)
-    response = client.table("shifts").select("*, auditor:profiles(*), client:clients(*)").eq("status", SHIFT_STATUS_SUBMITTED).order("created_at", desc=True).execute()
-    return response.data or []
+
+    try:
+        response = client.table("shifts").select("*, auditor:profiles(*), client:clients(*)").eq("status", SHIFT_STATUS_SUBMITTED).order("created_at", desc=True).execute()
+        return response.data or []
+    except Exception as e:
+        logging.error(f"[DB] get_submitted_shifts failed with joins: {str(e)}")
+
+        # Try without joins
+        try:
+            logging.info("[DB] Retrying without joins...")
+            response = client.table("shifts").select("*").eq("status", SHIFT_STATUS_SUBMITTED).order("created_at", desc=True).execute()
+            shifts = response.data or []
+            logging.info(f"[DB] Query without joins succeeded, got {len(shifts)} shifts")
+
+            # Manually fetch related data for each shift
+            for shift in shifts:
+                # Fetch auditor profile
+                if shift.get('auditor_id'):
+                    try:
+                        auditor_response = client.table("profiles").select("*").eq("id", shift['auditor_id']).execute()
+                        if auditor_response.data:
+                            shift['auditor'] = auditor_response.data[0]
+                    except Exception as auditor_err:
+                        logging.warning(f"[DB] Could not fetch auditor {shift['auditor_id']}: {auditor_err}")
+                        shift['auditor'] = None
+
+                # Fetch client
+                if shift.get('client_id'):
+                    try:
+                        client_response = client.table("clients").select("*").eq("id", shift['client_id']).execute()
+                        if client_response.data:
+                            shift['client'] = client_response.data[0]
+                    except Exception as client_err:
+                        logging.warning(f"[DB] Could not fetch client {shift['client_id']}: {client_err}")
+                        shift['client'] = None
+
+            return shifts
+        except Exception as retry_err:
+            logging.error(f"[DB] Retry without joins also failed: {str(retry_err)}")
+
+            # Last resort: try with service role if not already using it
+            if not use_service_role:
+                logging.info("[DB] Retrying with service role...")
+                return get_submitted_shifts(use_service_role=True)
+            else:
+                logging.error("[DB] Service role query also failed, returning empty list")
+                return []
 
 
 def create_shift(data: Dict) -> Optional[Dict]:
