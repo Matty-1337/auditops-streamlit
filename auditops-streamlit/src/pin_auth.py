@@ -41,6 +41,7 @@ def require_authentication():
 def require_role(allowed_roles: list[str] | str):
     """
     Require user to have one of the allowed roles.
+    ADMIN role has access to all pages regardless of requirement.
 
     Args:
         allowed_roles: Single role string or list of allowed role strings
@@ -48,6 +49,7 @@ def require_role(allowed_roles: list[str] | str):
     Example:
         require_role(ROLE_ADMIN)  # Only admins
         require_role([ROLE_ADMIN, ROLE_MANAGER])  # Admins or managers
+        require_role(ROLE_AUDITOR)  # Auditors, managers, and admins
     """
     # First ensure user is authenticated
     require_authentication()
@@ -57,6 +59,10 @@ def require_role(allowed_roles: list[str] | str):
         allowed_roles = [allowed_roles]
 
     user_role = get_user_role()
+
+    # ADMIN has access to ALL pages
+    if user_role == ROLE_ADMIN:
+        return
 
     # Check if user has required role
     if user_role not in allowed_roles:
@@ -87,6 +93,8 @@ def should_show_page(page_name: str, user_role: str = None) -> bool:
         '11_Admin_Pay_Periods.py',
         '12_Admin_Clients.py',
         '13_Admin_Secrets_Access_Log.py',
+        '14_Admin_Client_Approvals.py',
+        '15_Admin_User_Approvals.py',
         '99_Admin_Health_Check.py'
     ]
 
