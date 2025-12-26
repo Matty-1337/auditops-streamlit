@@ -36,8 +36,7 @@ def login_with_pin(pin_code: str) -> tuple[bool, str, dict | None]:
     """
     Authenticate user with 4-digit PIN code.
 
-    The app_users table should have a 'user_id' column that references auth.users.id (UUID).
-    This allows PIN-based login to work with the existing Supabase Auth-based database schema.
+    Simple PIN authentication using app_users table with integer IDs.
 
     Args:
         pin_code: The 4-digit PIN entered by user
@@ -49,17 +48,12 @@ def login_with_pin(pin_code: str) -> tuple[bool, str, dict | None]:
         client = get_client(service_role=True)  # Use service role to bypass RLS
 
         # Query app_users table for matching passcode
-        # Expected columns: id, name, passcode, role, user_id (UUID from auth.users)
+        # Expected columns: id (integer), name, passcode, role
         response = client.table('app_users').select("*").eq('passcode', pin_code).execute()
 
         if response.data and len(response.data) > 0:
             # Found matching user
             user = response.data[0]
-
-            # Ensure we have the auth user_id (UUID) for database queries
-            if 'user_id' not in user or not user['user_id']:
-                return False, "Account not properly configured. Please contact administrator.", None
-
             return True, "", user
         else:
             # No matching passcode
@@ -69,12 +63,12 @@ def login_with_pin(pin_code: str) -> tuple[bool, str, dict | None]:
         return False, f"Login error: {str(e)}", None
 
 
-def update_user_pin(app_user_id: int, new_pin: str) -> tuple[bool, str]:
+def update_user_pin(user_id: int, new_pin: str) -> tuple[bool, str]:
     """
-    Update user's PIN code in the app_users table.
+    Update user's PIN code.
 
     Args:
-        app_user_id: The user's ID in the app_users table (not the auth UUID)
+        user_id: The user's ID
         new_pin: The new 4-digit PIN
 
     Returns:
@@ -83,10 +77,10 @@ def update_user_pin(app_user_id: int, new_pin: str) -> tuple[bool, str]:
     try:
         client = get_client(service_role=True)
 
-        # Update the passcode using the app_users table ID
+        # Update the passcode
         response = client.table('app_users').update({
             'passcode': new_pin
-        }).eq('id', app_user_id).execute()
+        }).eq('id', user_id).execute()
 
         if response.data:
             return True, "PIN updated! Use this next time you log in."
@@ -128,12 +122,9 @@ def show_login_page():
                     success, error_msg, user_data = login_with_pin(pin_code)
 
                     if success and user_data:
-                        # Store user data in session state
-                        # Use user_id (UUID from auth.users) as the primary ID for database queries
-                        # This ensures compatibility with existing database schema
+                        # Store user data in session state - simple integer ID
                         st.session_state.user = {
-                            'id': user_data['user_id'],  # UUID from auth.users (for database queries)
-                            'app_user_id': user_data['id'],  # Integer ID from app_users (for PIN changes)
+                            'id': user_data['id'],  # Integer ID from app_users
                             'name': user_data['name'],
                             'role': user_data.get('role', 'AUDITOR')  # Default to AUDITOR if no role
                         }
@@ -150,8 +141,7 @@ def show_main_app():
     """Show main application with PIN change feature."""
     user = st.session_state.get('user', {})
     user_name = user.get('name', 'User')
-    user_id = user.get('id')  # This is the auth UUID for database queries
-    app_user_id = user.get('app_user_id')  # This is the app_users ID for PIN updates
+    user_id = user.get('id')  # Integer ID from app_users
     user_role = user.get('role', 'AUDITOR')
 
     # Sidebar navigation
@@ -189,8 +179,7 @@ def show_main_app():
                     elif new_pin != confirm_pin:
                         st.error("PINs do not match. Please try again.")
                     else:
-                        # Use app_user_id for PIN updates (app_users table ID)
-                        success, message = update_user_pin(app_user_id, new_pin)
+                        success, message = update_user_pin(user_id, new_pin)
                         if success:
                             st.success(message)
                         else:
