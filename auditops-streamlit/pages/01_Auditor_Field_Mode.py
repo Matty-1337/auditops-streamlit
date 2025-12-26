@@ -32,7 +32,29 @@ st.markdown("Check in/out and manage your shifts.")
 
 # Get shifts and identify open_shift and submit_ready_shift
 today_utc = datetime.now(timezone.utc).date()
-all_shifts = get_shifts_by_auditor(auditor_id, status=None)
+
+# Add error handling for shift query
+try:
+    all_shifts = get_shifts_by_auditor(auditor_id, status=None)
+except Exception as e:
+    st.error(f"⚠️ Error loading shifts: {str(e)}")
+
+    # Show diagnostic information
+    with st.expander("🔍 Diagnostic Information"):
+        st.write("**User Information:**")
+        st.write(f"- User ID: {auditor_id}")
+        st.write(f"- Email: {user.email if user else 'N/A'}")
+        st.write(f"- Profile Role: {profile.get('role') if profile else 'N/A'}")
+        st.write(f"- Profile Active: {profile.get('is_active') if profile else 'N/A'}")
+
+        st.write("\n**Troubleshooting Steps:**")
+        st.write("1. Verify your profile has the 'AUDITOR' role in the database")
+        st.write("2. Check that your profile is marked as active")
+        st.write("3. Contact an administrator to verify your permissions")
+
+    st.stop()
+
+all_shifts
 open_shift = None
 submit_ready_shift = None
 
