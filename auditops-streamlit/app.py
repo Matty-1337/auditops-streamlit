@@ -122,9 +122,12 @@ def show_login_page():
                     success, error_msg, user_data = login_with_pin(pin_code)
 
                     if success and user_data:
-                        # Store user data in session state - simple integer ID
+                        # Store user data in session state
+                        # Use auth_uuid for database queries (existing schema compatibility)
+                        # Use id for PIN updates (app_users table)
                         st.session_state.user = {
-                            'id': user_data['id'],  # Integer ID from app_users
+                            'id': user_data.get('auth_uuid', user_data['id']),  # UUID for DB queries
+                            'app_user_id': user_data['id'],  # Integer ID for PIN changes
                             'name': user_data['name'],
                             'role': user_data.get('role', 'AUDITOR')  # Default to AUDITOR if no role
                         }
@@ -141,7 +144,8 @@ def show_main_app():
     """Show main application with PIN change feature."""
     user = st.session_state.get('user', {})
     user_name = user.get('name', 'User')
-    user_id = user.get('id')  # Integer ID from app_users
+    user_id = user.get('id')  # UUID for database queries
+    app_user_id = user.get('app_user_id')  # Integer ID for PIN changes
     user_role = user.get('role', 'AUDITOR')
 
     # Sidebar navigation
@@ -179,7 +183,7 @@ def show_main_app():
                     elif new_pin != confirm_pin:
                         st.error("PINs do not match. Please try again.")
                     else:
-                        success, message = update_user_pin(user_id, new_pin)
+                        success, message = update_user_pin(app_user_id, new_pin)
                         if success:
                             st.success(message)
                         else:
