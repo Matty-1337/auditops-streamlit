@@ -125,47 +125,36 @@ def get_client_by_id(client_id: str) -> Optional[Dict]:
 
 
 def get_all_clients(active_only: bool = True) -> List[Dict]:
-    """Get all clients."""
-    import logging
-    client = get_client(service_role=True)  # Use service role for reliable access
+    """
+    Get all clients from database.
 
-    if _check_clients_app_exists():
-        try:
-            query = client.table("clients_app").select("id, name, is_active")
-            if active_only:
-                query = query.eq("is_active", True)
-            response = query.order("name").execute()
-            return response.data or []
-        except Exception as e:
-            logging.error(f"[DB] get_all_clients failed on clients_app: {str(e)}")
-            # Fall through to try regular clients table
+    Database schema:
+    - client_id (uuid)
+    - client_name (text)  
+    - active (boolean)
+    """
+    client = get_client(service_role=True)
 
-    # Try regular clients table (with or without clients_app failure)
-    try:
-        query = client.table("clients").select("*")
-        if active_only:
-            # Use 'active' column (actual schema) instead of 'is_active'
-            query = query.eq("active", True)
-        response = query.order("client_name").execute()
-        return [_normalize_client_row(row) for row in (response.data or [])]
-    except Exception as e:
-        logging.error(f"[DB] get_all_clients failed on clients table: {str(e)}")
+    # Query exact columns from schema
+    query = client.table("clients").select("client_id, client_name, active, address, notes")
 
-        # Try with service role as last resort
-        try:
-            logging.info("[DB] Retrying clients query with service role...")
-            service_client = get_client(service_role=True)
-            query = service_client.table("clients").select("*")
-            if active_only:
-                query = query.eq("active", True)  # Use actual column name
-            response = query.order("client_name").execute()  # Use actual column name
-            logging.info(f"[DB] Service role query succeeded, got {len(response.data or [])} clients")
-            return [_normalize_client_row(row) for row in (response.data or [])]
-        except Exception as service_err:
-            logging.error(f"[DB] Service role query also failed: {str(service_err)}")
-            # Return empty list rather than crashing the app
-            logging.warning("[DB] Returning empty client list due to all queries failing")
-            return []
+    if active_only:
+        query = query.eq("active", True)
+
+    response = query.order("client_name").execute()
+
+    # Map to expected format
+    result = []
+    for row in (response.data or []):
+        result.append({
+            "id": row["client_id"],
+            "name": row["client_name"],
+            "is_active": row["active"],
+            "address": row.get("address"),
+            "notes": row.get("notes")
+        })
+
+    return result
 
 
 def create_client(data: Dict, use_service_role: bool = True) -> Optional[Dict]:
