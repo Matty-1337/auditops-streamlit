@@ -115,9 +115,8 @@ with col1:
         if open_shift.get("notes"):
             st.markdown(f"**Notes:** {open_shift.get('notes')}")
 
-        # Client Information Section
+        # Client Profile Section
         st.markdown("---")
-        st.markdown("### 📋 Client Information")
 
         # Get full client details
         client_id = open_shift.get("client_id")
@@ -126,22 +125,61 @@ with col1:
             client_detail = next((c for c in all_clients if c["id"] == client_id), None)
 
             if client_detail:
-                st.markdown(f"**Address:** {client_detail.get('address', 'N/A')}")
+                with st.expander(f"📋 **{client_detail.get('name', 'Client')} - Full Profile**", expanded=True):
+                    st.markdown(f"## {client_detail.get('name', 'Client Profile')}")
 
-                if client_detail.get('contact_person'):
-                    st.markdown(f"**Contact:** {client_detail.get('contact_person')}")
-                if client_detail.get('contact_phone'):
-                    st.markdown(f"**Phone:** {client_detail.get('contact_phone')}")
-                if client_detail.get('contact_email'):
-                    st.markdown(f"**Email:** {client_detail.get('contact_email')}")
+                    # Contact Information Section
+                    st.markdown("### Contact Information:")
+                    col1, col2 = st.columns(2)
 
-                if client_detail.get('wifi_name'):
-                    st.markdown(f"**WiFi:** {client_detail.get('wifi_name')}")
-                    if client_detail.get('wifi_password'):
-                        st.markdown(f"**WiFi Password:** {client_detail.get('wifi_password')}")
+                    with col1:
+                        if client_detail.get('contact_person'):
+                            st.markdown(f"👤 **{client_detail.get('contact_person')}**")
+                        else:
+                            st.markdown("👤 None")
 
-                if client_detail.get('special_instructions'):
-                    st.info(f"**Special Instructions:** {client_detail.get('special_instructions')}")
+                    with col2:
+                        if client_detail.get('contact_phone'):
+                            st.markdown(f"📞 **{client_detail.get('contact_phone')}**")
+                        else:
+                            st.markdown("📞 None")
+
+                    if client_detail.get('contact_email'):
+                        st.markdown(f"📧 **{client_detail.get('contact_email')}**")
+                    else:
+                        st.markdown("📧 None")
+
+                    # Address Section
+                    st.markdown("---")
+                    st.markdown("### Location:")
+                    if client_detail.get('address'):
+                        st.markdown(f"📍 {client_detail.get('address')}")
+                    else:
+                        st.markdown("📍 None")
+
+                    # WiFi Information Section
+                    st.markdown("---")
+                    st.markdown("### WiFi Information:")
+                    if client_detail.get('wifi_name'):
+                        st.markdown(f"📶 **Network:** {client_detail.get('wifi_name')}")
+                        if client_detail.get('wifi_password'):
+                            st.markdown(f"🔑 **Password:** {client_detail.get('wifi_password')}")
+                        else:
+                            st.markdown("🔑 **Password:** None")
+                    else:
+                        st.markdown("📶 None")
+
+                    # Special Instructions Section
+                    if client_detail.get('special_instructions'):
+                        st.markdown("---")
+                        st.markdown("### Special Instructions:")
+                        st.info(client_detail.get('special_instructions'))
+
+                    # Notes Section
+                    if client_detail.get('notes'):
+                        st.markdown("---")
+                        st.markdown("### Notes:")
+                        st.markdown(f"📝 {client_detail.get('notes')}")
 
         st.markdown("---")
 
