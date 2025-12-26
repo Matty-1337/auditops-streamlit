@@ -1,4 +1,0 @@
-"""
-AuditOps source package.
-"""
-
