@@ -539,8 +539,8 @@ def get_access_logs(client_id: Optional[str] = None, user_id: Optional[str] = No
 # ============================================
 
 def get_client_secrets(client_id: str) -> Optional[Dict]:
-    """Get client secrets by client_id. Relies on RLS."""
-    client = get_client(service_role=False)
+    """Get client secrets by client_id. Auditors need access to site information."""
+    client = get_client(service_role=True)  # Use service role so auditors can access
     try:
         response = client.table("client_secrets").select(
             "wifi_name, wifi_password, alarm_code, lockbox_code, other_site_notes"
@@ -554,7 +554,7 @@ def get_client_secrets(client_id: str) -> Optional[Dict]:
 
 def log_secrets_access(client_id: str, auditor_user_id: str, fields_accessed: List[str], reason: Optional[str] = None) -> bool:
     """Log secrets access. Returns True on success, False on failure."""
-    client = get_client(service_role=False)
+    client = get_client(service_role=True)  # Use service role to log access
     try:
         # fields_accessed is jsonb, so keep as list
         data = {

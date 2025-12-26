@@ -111,18 +111,49 @@ with col1:
         st.markdown(f"**Client:** {get_client_display_name(open_shift.get('client'))}")
         st.markdown(f"**Check-in:** {format_datetime(open_shift.get('check_in'))}")
         st.markdown(f"**Status:** {open_shift.get('status', 'draft').upper()}")
-        
+
         if open_shift.get("notes"):
             st.markdown(f"**Notes:** {open_shift.get('notes')}")
-        
+
+        # Client Information Section
+        st.markdown("---")
+        st.markdown("### 📋 Client Information")
+
+        # Get full client details
+        client_id = open_shift.get("client_id")
+        if client_id:
+            all_clients = get_all_clients(active_only=False)
+            client_detail = next((c for c in all_clients if c["id"] == client_id), None)
+
+            if client_detail:
+                st.markdown(f"**Address:** {client_detail.get('address', 'N/A')}")
+
+                if client_detail.get('contact_person'):
+                    st.markdown(f"**Contact:** {client_detail.get('contact_person')}")
+                if client_detail.get('contact_phone'):
+                    st.markdown(f"**Phone:** {client_detail.get('contact_phone')}")
+                if client_detail.get('contact_email'):
+                    st.markdown(f"**Email:** {client_detail.get('contact_email')}")
+
+                if client_detail.get('wifi_name'):
+                    st.markdown(f"**WiFi:** {client_detail.get('wifi_name')}")
+                    if client_detail.get('wifi_password'):
+                        st.markdown(f"**WiFi Password:** {client_detail.get('wifi_password')}")
+
+                if client_detail.get('special_instructions'):
+                    st.info(f"**Special Instructions:** {client_detail.get('special_instructions')}")
+
+        st.markdown("---")
+
         # Site Info / Secrets section
-        st.subheader("Site Info / Secrets")
+        st.subheader("🔐 Site Codes (Alarm, Lockbox)")
         if st.button("Reveal Site Info (60s)"):
             client_id = open_shift.get("client_id")
             if client_id:
                 secrets = get_client_secrets(client_id)
                 if secrets is None:
-                    st.warning("Secrets locked. You must be checked in today.")
+                    st.warning("No alarm or lockbox codes configured for this client.")
+                    st.info("WiFi and contact information are shown above in Client Information.")
                     st.session_state.revealed_secrets_client_id = None
                     st.session_state.revealed_secrets_payload = None
                 else:
