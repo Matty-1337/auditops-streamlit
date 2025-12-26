@@ -2,8 +2,8 @@
 Admin Clients - Manage client profiles.
 """
 import streamlit as st
-from src.auth import require_authentication
-from src.config import require_role_access, ROLE_ADMIN
+from src.pin_auth import require_authentication, require_role
+from src.config import ROLE_ADMIN
 from src.db import get_all_clients, create_client, update_client, delete_client, get_client_by_id
 from src.utils import format_date
 
@@ -12,7 +12,7 @@ st.set_page_config(page_title="Clients", layout="wide")
 
 # Authentication and role check
 require_authentication()
-require_role_access(ROLE_ADMIN)
+require_role(ROLE_ADMIN)
 
 st.title("🏢 Clients")
 st.markdown("Manage client profiles.")

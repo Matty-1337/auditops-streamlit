@@ -119,10 +119,11 @@ def show_login_page():
                     success, error_msg, user_data = login_with_pin(pin_code)
 
                     if success and user_data:
-                        # Store user data in session state
+                        # Store user data in session state (including role if available)
                         st.session_state.user = {
                             'id': user_data['id'],
-                            'name': user_data['name']
+                            'name': user_data['name'],
+                            'role': user_data.get('role', 'AUDITOR')  # Default to AUDITOR if no role
                         }
                         st.session_state.authenticated = True
                         st.success("Login successful!")
@@ -138,10 +139,12 @@ def show_main_app():
     user = st.session_state.get('user', {})
     user_name = user.get('name', 'User')
     user_id = user.get('id')
+    user_role = user.get('role', 'AUDITOR')
 
     # Sidebar navigation
     with st.sidebar:
         st.markdown(f"### 👤 {user_name}")
+        st.markdown(f"**Role:** {user_role}")
         st.markdown("---")
 
         # Change PIN section
@@ -193,6 +196,7 @@ def show_main_app():
 
     # Main content area
     st.markdown(f"# Welcome, {user_name}!")
+    st.markdown(f"**Role:** {user_role}")
     st.markdown("---")
     st.info("👈 Use the sidebar to navigate to different sections.")
     st.markdown("### Your Dashboard")
