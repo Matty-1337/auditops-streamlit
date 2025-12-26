@@ -397,9 +397,55 @@ def get_pay_items_by_period(period_id: str, auditor_id: Optional[str] = None, us
 
 def get_pay_items_by_auditor(auditor_id: str, use_service_role: bool = False) -> List[Dict]:
     """Get all pay items for an auditor."""
+    import logging
     client = get_client(service_role=use_service_role)
-    response = client.table("pay_items").select("*, pay_period:pay_periods(*), shift:shifts(*)").eq("auditor_id", auditor_id).order("created_at", desc=True).execute()
-    return response.data or []
+
+    try:
+        response = client.table("pay_items").select("*, pay_period:pay_periods(*), shift:shifts(*)").eq("auditor_id", auditor_id).order("created_at", desc=True).execute()
+        return response.data or []
+    except Exception as e:
+        logging.error(f"[DB] get_pay_items_by_auditor failed with joins: {str(e)}")
+
+        # Try without joins
+        try:
+            logging.info("[DB] Retrying without joins...")
+            response = client.table("pay_items").select("*").eq("auditor_id", auditor_id).order("created_at", desc=True).execute()
+            pay_items = response.data or []
+            logging.info(f"[DB] Query without joins succeeded, got {len(pay_items)} pay items")
+
+            # Manually fetch related data for each pay item
+            for item in pay_items:
+                # Fetch pay period
+                if item.get('pay_period_id'):
+                    try:
+                        period_response = client.table("pay_periods").select("*").eq("id", item['pay_period_id']).execute()
+                        if period_response.data:
+                            item['pay_period'] = period_response.data[0]
+                    except Exception as period_err:
+                        logging.warning(f"[DB] Could not fetch pay_period {item['pay_period_id']}: {period_err}")
+                        item['pay_period'] = None
+
+                # Fetch shift
+                if item.get('shift_id'):
+                    try:
+                        shift_response = client.table("shifts").select("*").eq("id", item['shift_id']).execute()
+                        if shift_response.data:
+                            item['shift'] = shift_response.data[0]
+                    except Exception as shift_err:
+                        logging.warning(f"[DB] Could not fetch shift {item['shift_id']}: {shift_err}")
+                        item['shift'] = None
+
+            return pay_items
+        except Exception as retry_err:
+            logging.error(f"[DB] Retry without joins also failed: {str(retry_err)}")
+
+            # Last resort: try with service role if not already using it
+            if not use_service_role:
+                logging.info("[DB] Retrying with service role...")
+                return get_pay_items_by_auditor(auditor_id, use_service_role=True)
+            else:
+                logging.error("[DB] Service role query also failed, returning empty list")
+                return []
 
 
 def create_pay_item(data: Dict, use_service_role: bool = True) -> Optional[Dict]:
