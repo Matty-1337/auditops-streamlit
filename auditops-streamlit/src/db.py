@@ -157,8 +157,8 @@ def get_all_clients(active_only: bool = True) -> List[Dict]:
             service_client = get_client(service_role=True)
             query = service_client.table("clients").select("*")
             if active_only:
-                query = query.eq("is_active", True)
-            response = query.order("name").execute()
+                query = query.eq("active", True)  # Use actual column name
+            response = query.order("client_name").execute()  # Use actual column name
             logging.info(f"[DB] Service role query succeeded, got {len(response.data or [])} clients")
             return [_normalize_client_row(row) for row in (response.data or [])]
         except Exception as service_err:
