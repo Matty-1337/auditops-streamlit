@@ -136,8 +136,8 @@ def get_all_clients(active_only: bool = True) -> List[Dict]:
     else:
         query = client.table("clients").select("*")
         if active_only:
-            query = query.eq("active", True)
-        response = query.order("client_name").execute()
+            query = query.eq("is_active", True)
+        response = query.order("name").execute()
         return [_normalize_client_row(row) for row in (response.data or [])]
 
 
