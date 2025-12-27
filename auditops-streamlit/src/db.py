@@ -445,13 +445,14 @@ def get_open_pay_periods() -> List[Dict]:
 
 
 @log_postgrest_errors
-def create_pay_period(start_date: date, end_date: date, use_service_role: bool = True) -> Optional[Dict]:
+def create_pay_period(start_date: date, end_date: date, pay_date: Optional[date] = None, use_service_role: bool = True) -> Optional[Dict]:
     """
     Create a new pay period.
 
     Args:
-        start_date: Start date of the pay period
-        end_date: End date of the pay period
+        start_date: Start date of the pay period (Saturday)
+        end_date: End date of the pay period (Friday, 13 days after start)
+        pay_date: Pay date (Friday, 7 days after end_date). If None, calculated automatically.
         use_service_role: Whether to use service role (bypasses RLS)
 
     Returns:
@@ -460,7 +461,13 @@ def create_pay_period(start_date: date, end_date: date, use_service_role: bool =
     Raises:
         APIError: If database operation fails (e.g., duplicate dates)
     """
+    from datetime import timedelta
+
     client = get_client(service_role=use_service_role)
+
+    # Calculate pay_date if not provided (7 days after end_date)
+    if pay_date is None:
+        pay_date = end_date + timedelta(days=7)
 
     # Check for existing pay period with same dates
     try:
@@ -480,13 +487,14 @@ def create_pay_period(start_date: date, end_date: date, use_service_role: bool =
     data = {
         "start_date": start_date.isoformat(),
         "end_date": end_date.isoformat(),
+        "pay_date": pay_date.isoformat(),
         "status": PAY_PERIOD_OPEN
     }
 
     try:
         response = client.table("pay_periods").insert(data).execute()
         if response.data:
-            logging.info(f"Successfully created pay period: {start_date} to {end_date}")
+            logging.info(f"Successfully created pay period: {start_date} to {end_date}, pay date: {pay_date}")
             return response.data[0]
         return None
     except APIError as e:

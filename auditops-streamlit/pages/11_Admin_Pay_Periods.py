@@ -22,24 +22,32 @@ require_role(ROLE_ADMIN)
 
 st.title("📅 Pay Periods")
 st.markdown("Create and manage pay periods.")
+st.info("💡 **Recurring Schedule**: Pay periods run Saturday to Friday (14 days), with pay date the following Friday. First period: Dec 27, 2025 - Jan 9, 2026 → Pay: Jan 16, 2026")
 
 # Create new pay period
-with st.expander("➕ Create New Pay Period", expanded=False):
+with st.expander("➕ Create New Pay Period (Manual)", expanded=False):
+    st.warning("⚠️ **Note**: Pay periods are auto-generated via SQL. Use this only if you need a custom period.")
     with st.form("create_period_form"):
-        col1, col2 = st.columns(2)
+        col1, col2, col3 = st.columns(3)
         with col1:
-            start_date = st.date_input("Start Date", value=date.today())
+            start_date = st.date_input("Start Date (Saturday)", value=date.today())
         with col2:
-            end_date = st.date_input("End Date", value=date.today() + timedelta(days=13))
-        
+            end_date = st.date_input("End Date (Friday)", value=date.today() + timedelta(days=13))
+        with col3:
+            pay_date = st.date_input("Pay Date (Friday)", value=date.today() + timedelta(days=20))
+
+        st.caption("📝 Standard schedule: Start on Saturday, end 13 days later (Friday), pay 7 days after that (next Friday)")
+
         if st.form_submit_button("Create Pay Period", type="primary"):
             if end_date <= start_date:
                 st.error("❌ End date must be after start date.")
+            elif pay_date <= end_date:
+                st.error("❌ Pay date must be after end date.")
             else:
                 try:
-                    result = create_pay_period(start_date, end_date, use_service_role=True)
+                    result = create_pay_period(start_date, end_date, pay_date, use_service_role=True)
                     if result:
-                        st.success(f"✅ Pay period created: {format_date(start_date)} to {format_date(end_date)}")
+                        st.success(f"✅ Pay period created: {format_date(start_date)} to {format_date(end_date)}, pay: {format_date(pay_date)}")
                         st.rerun()
                     else:
                         st.error(f"❌ Failed to create pay period. A pay period with dates {format_date(start_date)} to {format_date(end_date)} already exists.")
@@ -68,10 +76,11 @@ if pay_periods:
         table_data.append({
             "Start Date": format_date(period.get("start_date")),
             "End Date": format_date(period.get("end_date")),
+            "Pay Date": format_date(period.get("pay_date", "N/A")),
             "Status": period.get("status", "open").upper(),
             "Created": format_date(period.get("created_at"))
         })
-    
+
     df = pd.DataFrame(table_data)
     st.dataframe(df, use_container_width=True, hide_index=True)
     
@@ -88,6 +97,7 @@ if pay_periods:
             
             with col1:
                 st.markdown(f"**Period:** {format_date(selected_period.get('start_date'))} to {format_date(selected_period.get('end_date'))}")
+                st.markdown(f"**Pay Date:** {format_date(selected_period.get('pay_date', 'N/A'))}")
                 st.markdown(f"**Status:** {selected_period.get('status', 'open').upper()}")
             
             with col2:
