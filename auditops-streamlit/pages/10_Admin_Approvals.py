@@ -1,5 +1,7 @@
 """
 Admin/Manager Approvals - Review and approve submitted shifts.
+
+This page allows managers and admins to review and approve/reject submitted shifts.
 """
 import streamlit as st
 import logging
@@ -15,6 +17,9 @@ try:
 except ImportError as e:
     DIAGNOSTICS_AVAILABLE = False
     logging.warning(f"Diagnostic function not available: {e}")
+except Exception as e:
+    DIAGNOSTICS_AVAILABLE = False
+    logging.warning(f"Could not load diagnostics: {e}")
 
 # Page config
 st.set_page_config(page_title="Approvals", layout="wide")
