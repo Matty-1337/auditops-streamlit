@@ -467,18 +467,69 @@ def create_pay_items_bulk(items: List[Dict], use_service_role: bool = True) -> L
 
 def get_approval(approval_id: str) -> Optional[Dict]:
     """Get approval by ID."""
-    client = get_client(service_role=False)
-    response = client.table("approvals").select("*, shift:shifts(*), approver:profiles(*)").eq("id", approval_id).execute()
-    if response.data:
-        return response.data[0]
-    return None
+    import logging
+    client = get_client(service_role=True)
+
+    # Get approval without joins first (more reliable)
+    response = client.table("approvals").select("*").eq("id", approval_id).execute()
+    if not response.data:
+        return None
+
+    approval = response.data[0]
+
+    # Manually fetch approver from app_users table
+    if approval.get('approver_id'):
+        try:
+            approver_response = client.table("app_users").select("id, name, email, phone, role").eq("auth_uuid", approval['approver_id']).execute()
+            if approver_response.data and len(approver_response.data) > 0:
+                approval['approver'] = approver_response.data[0]
+            else:
+                approval['approver'] = None
+                logging.warning(f"[DB] No approver found for UUID {approval['approver_id']}")
+        except Exception as approver_err:
+            logging.warning(f"[DB] Could not fetch approver {approval['approver_id']}: {approver_err}")
+            approval['approver'] = None
+
+    # Manually fetch shift data
+    if approval.get('shift_id'):
+        try:
+            shift_response = client.table("shifts").select("*").eq("id", approval['shift_id']).execute()
+            if shift_response.data and len(shift_response.data) > 0:
+                approval['shift'] = shift_response.data[0]
+            else:
+                approval['shift'] = None
+        except Exception as shift_err:
+            logging.warning(f"[DB] Could not fetch shift {approval['shift_id']}: {shift_err}")
+            approval['shift'] = None
+
+    return approval
 
 
 def get_approvals_by_shift(shift_id: str) -> List[Dict]:
     """Get approvals for a shift."""
+    import logging
     client = get_client(service_role=True)
-    response = client.table("approvals").select("*, approver:profiles(*)").eq("shift_id", shift_id).order("created_at", desc=True).execute()
-    return response.data or []
+
+    # Get approvals without joins first (more reliable)
+    response = client.table("approvals").select("*").eq("shift_id", shift_id).order("created_at", desc=True).execute()
+    approvals = response.data or []
+    logging.info(f"[DB] Got {len(approvals)} approvals for shift {shift_id}")
+
+    # Manually fetch approver data for each approval
+    for approval in approvals:
+        if approval.get('approver_id'):
+            try:
+                approver_response = client.table("app_users").select("id, name, email, phone, role").eq("auth_uuid", approval['approver_id']).execute()
+                if approver_response.data and len(approver_response.data) > 0:
+                    approval['approver'] = approver_response.data[0]
+                else:
+                    approval['approver'] = None
+                    logging.warning(f"[DB] No approver found for UUID {approval['approver_id']}")
+            except Exception as approver_err:
+                logging.warning(f"[DB] Could not fetch approver {approval['approver_id']}: {approver_err}")
+                approval['approver'] = None
+
+    return approvals
 
 
 def create_approval(shift_id: str, approver_id: str, decision: str, notes: Optional[str] = None, use_service_role: bool = True) -> Optional[Dict]:
