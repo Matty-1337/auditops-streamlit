@@ -34,14 +34,18 @@ with st.expander("➕ Create New Pay Period", expanded=False):
         
         if st.form_submit_button("Create Pay Period", type="primary"):
             if end_date <= start_date:
-                st.error("End date must be after start date.")
+                st.error("❌ End date must be after start date.")
             else:
-                result = create_pay_period(start_date, end_date, use_service_role=True)
-                if result:
-                    st.success(f"Pay period created: {format_date(start_date)} to {format_date(end_date)}")
-                    st.rerun()
-                else:
-                    st.error("Failed to create pay period. It may already exist.")
+                try:
+                    result = create_pay_period(start_date, end_date, use_service_role=True)
+                    if result:
+                        st.success(f"✅ Pay period created: {format_date(start_date)} to {format_date(end_date)}")
+                        st.rerun()
+                    else:
+                        st.error(f"❌ Failed to create pay period. A pay period with dates {format_date(start_date)} to {format_date(end_date)} already exists.")
+                except Exception as e:
+                    st.error(f"❌ Error creating pay period: {str(e)}")
+                    st.info("💡 Please check that:\n- The dates don't overlap with existing pay periods\n- You have admin permissions\n- The database connection is working")
 
 # List pay periods
 st.subheader("Pay Periods")

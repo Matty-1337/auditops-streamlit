@@ -444,18 +444,63 @@ def get_open_pay_periods() -> List[Dict]:
     return response.data or []
 
 
+@log_postgrest_errors
 def create_pay_period(start_date: date, end_date: date, use_service_role: bool = True) -> Optional[Dict]:
-    """Create a new pay period."""
+    """
+    Create a new pay period.
+
+    Args:
+        start_date: Start date of the pay period
+        end_date: End date of the pay period
+        use_service_role: Whether to use service role (bypasses RLS)
+
+    Returns:
+        Created pay period dict or None if failed
+
+    Raises:
+        APIError: If database operation fails (e.g., duplicate dates)
+    """
     client = get_client(service_role=use_service_role)
+
+    # Check for existing pay period with same dates
+    try:
+        existing = client.table("pay_periods")\
+            .select("*")\
+            .eq("start_date", start_date.isoformat())\
+            .eq("end_date", end_date.isoformat())\
+            .execute()
+
+        if existing.data and len(existing.data) > 0:
+            logging.warning(f"Pay period already exists for {start_date} to {end_date}")
+            return None
+    except Exception as e:
+        logging.error(f"Error checking for existing pay period: {e}")
+        # Continue anyway - the UNIQUE constraint will catch duplicates
+
     data = {
         "start_date": start_date.isoformat(),
         "end_date": end_date.isoformat(),
         "status": PAY_PERIOD_OPEN
     }
-    response = client.table("pay_periods").insert(data).execute()
-    if response.data:
-        return response.data[0]
-    return None
+
+    try:
+        response = client.table("pay_periods").insert(data).execute()
+        if response.data:
+            logging.info(f"Successfully created pay period: {start_date} to {end_date}")
+            return response.data[0]
+        return None
+    except APIError as e:
+        # Log detailed error for debugging
+        error_msg = str(e)
+        logging.error(f"Failed to create pay period: {error_msg}")
+
+        # Check if it's a duplicate key error
+        if "duplicate" in error_msg.lower() or "unique" in error_msg.lower():
+            logging.warning(f"Duplicate pay period detected: {start_date} to {end_date}")
+            return None
+
+        # Re-raise for other errors
+        raise
 
 
 def lock_pay_period(period_id: str, use_service_role: bool = True) -> Optional[Dict]:
