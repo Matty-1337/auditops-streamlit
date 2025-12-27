@@ -5,8 +5,16 @@ import streamlit as st
 import logging
 from src.pin_auth import require_authentication, require_role, get_current_user
 from src.config import ROLE_MANAGER, ROLE_ADMIN, SHIFT_STATUS_SUBMITTED, SHIFT_STATUS_APPROVED, SHIFT_STATUS_REJECTED
-from src.db import get_submitted_shifts, get_shift, create_approval, get_approvals_by_shift, diagnose_approvals_query
+from src.db import get_submitted_shifts, get_shift, create_approval, get_approvals_by_shift
 from src.utils import format_datetime, format_duration, calculate_hours, get_client_display_name, get_user_display_name
+
+# Try to import diagnostic function (optional, for troubleshooting)
+try:
+    from src.db import diagnose_approvals_query
+    DIAGNOSTICS_AVAILABLE = True
+except ImportError as e:
+    DIAGNOSTICS_AVAILABLE = False
+    logging.warning(f"Diagnostic function not available: {e}")
 
 # Page config
 st.set_page_config(page_title="Approvals", layout="wide")
@@ -111,15 +119,16 @@ else:
                 logging.exception(f"Failed to load approval history for shift {shift['id']}")
                 st.warning("⚠️ Could not load approval history. You can still approve/reject this shift.")
 
-                # Add diagnostic button for troubleshooting (only show if there's an error)
-                if st.button(f"🔍 Run Diagnostics", key=f"diagnose_{shift['id']}"):
-                    with st.expander("Diagnostic Results", expanded=True):
-                        try:
-                            results = diagnose_approvals_query(shift["id"])
-                            st.json(results)
-                            st.info("📋 Check the logs at /tmp/postgrest_errors.log for detailed error information")
-                        except Exception as diag_err:
-                            st.error(f"Diagnostic failed: {str(diag_err)}")
+                # Add diagnostic button for troubleshooting (only show if diagnostics available)
+                if DIAGNOSTICS_AVAILABLE:
+                    if st.button(f"🔍 Run Diagnostics", key=f"diagnose_{shift['id']}"):
+                        with st.expander("Diagnostic Results", expanded=True):
+                            try:
+                                results = diagnose_approvals_query(shift["id"])
+                                st.json(results)
+                                st.info("📋 Check the logs at /tmp/postgrest_errors.log for detailed error information")
+                            except Exception as diag_err:
+                                st.error(f"Diagnostic failed: {str(diag_err)}")
 
             st.divider()
 
