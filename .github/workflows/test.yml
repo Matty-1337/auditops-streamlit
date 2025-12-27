@@ -30,9 +30,9 @@ jobs:
         python -m pip install --upgrade pip
         pip install pytest pytest-cov pytest-xdist
 
-        # Install main requirements if they exist
-        if [ -f requirements.txt ]; then
-          pip install -r requirements.txt
+        # Install main requirements from nested directory (production code)
+        if [ -f auditops-streamlit/requirements.txt ]; then
+          pip install -r auditops-streamlit/requirements.txt
         fi
 
         # Install test requirements if they exist
@@ -116,7 +116,7 @@ jobs:
     - name: Check dependencies for security vulnerabilities
       run: |
         # Check for known security vulnerabilities in dependencies
-        pip install -r requirements.txt 2>/dev/null || true
+        pip install -r auditops-streamlit/requirements.txt 2>/dev/null || true
         safety check --json || true
       continue-on-error: true
 
@@ -140,7 +140,7 @@ jobs:
       run: |
         python -m pip install --upgrade pip
         pip install pytest
-        if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
+        if [ -f auditops-streamlit/requirements.txt ]; then pip install -r auditops-streamlit/requirements.txt; fi
 
     - name: Run integration tests
       env:
@@ -170,11 +170,11 @@ jobs:
     - name: Install dependencies
       run: |
         python -m pip install --upgrade pip
-        if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
+        if [ -f auditops-streamlit/requirements.txt ]; then pip install -r auditops-streamlit/requirements.txt; fi
 
     - name: Check Python syntax
       run: |
-        python -m py_compile auditops-streamlit/**/*.py
+        find auditops-streamlit -name "*.py" -type f -exec python -m py_compile {} \;
 
     - name: Try importing main modules
       run: |
