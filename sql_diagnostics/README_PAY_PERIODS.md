@@ -161,6 +161,30 @@ SET pay_date = end_date + INTERVAL '7 days'
 WHERE pay_date IS NULL;
 ```
 
+### Issue: Helper functions fail with "column p.id does not exist"
+
+**Impact**: ✅ **NOT CRITICAL** - Your application works fine without these functions!
+
+**Explanation**: The helper functions (`get_current_pay_period()` and `get_next_pay_period()`) are optional. The Admin Pay Periods page has its own Python logic to detect the current period and doesn't use these SQL functions.
+
+**Solution**: If you want to use these functions for direct SQL queries, run:
+```bash
+sql_diagnostics/optional_helper_functions_fixed.sql
+```
+
+Or simply use these queries directly instead:
+```sql
+-- Get current pay period
+SELECT * FROM pay_periods
+WHERE CURRENT_DATE BETWEEN start_date AND end_date
+ORDER BY start_date LIMIT 1;
+
+-- Get next pay period
+SELECT * FROM pay_periods
+WHERE start_date > CURRENT_DATE
+ORDER BY start_date LIMIT 1;
+```
+
 ## Schedule Validation
 
 To verify the schedule is correct:
