@@ -2,9 +2,10 @@
 Admin/Manager Approvals - Review and approve submitted shifts.
 """
 import streamlit as st
+import logging
 from src.pin_auth import require_authentication, require_role, get_current_user
 from src.config import ROLE_MANAGER, ROLE_ADMIN, SHIFT_STATUS_SUBMITTED, SHIFT_STATUS_APPROVED, SHIFT_STATUS_REJECTED
-from src.db import get_submitted_shifts, get_shift, create_approval, get_approvals_by_shift
+from src.db import get_submitted_shifts, get_shift, create_approval, get_approvals_by_shift, diagnose_approvals_query
 from src.utils import format_datetime, format_duration, calculate_hours, get_client_display_name, get_user_display_name
 
 # Page config
@@ -89,18 +90,36 @@ else:
                             else:
                                 st.error("Failed to reject shift.")
             
-            # Show previous approvals
-            approvals = get_approvals_by_shift(shift["id"])
-            if approvals:
-                st.markdown("**Previous Decisions:**")
-                for approval in approvals:
-                    decision = approval.get("decision", "").upper()
-                    approver = get_user_display_name(approval.get("approver"))
-                    decided_at = format_datetime(approval.get("decided_at"))
-                    notes = approval.get("decision_notes", "")
-                    st.caption(f"{decision} by {approver} on {decided_at}")
-                    if notes:
-                        st.caption(f"  Notes: {notes}")
-            
+            # Show previous approvals (with error handling)
+            try:
+                approvals = get_approvals_by_shift(shift["id"])
+                if approvals:
+                    st.markdown("**Previous Decisions:**")
+                    for approval in approvals:
+                        decision = approval.get("decision", "").upper()
+                        approver = get_user_display_name(approval.get("approver"))
+                        # Use created_at if decided_at doesn't exist
+                        decided_at = format_datetime(approval.get("decided_at") or approval.get("created_at"))
+                        notes = approval.get("decision_notes", "")
+                        st.caption(f"{decision} by {approver} on {decided_at}")
+                        if notes:
+                            st.caption(f"  Notes: {notes}")
+                else:
+                    st.caption("_No previous decisions_")
+            except Exception as e:
+                # Log error but don't crash the approval workflow
+                logging.exception(f"Failed to load approval history for shift {shift['id']}")
+                st.warning("⚠️ Could not load approval history. You can still approve/reject this shift.")
+
+                # Add diagnostic button for troubleshooting (only show if there's an error)
+                if st.button(f"🔍 Run Diagnostics", key=f"diagnose_{shift['id']}"):
+                    with st.expander("Diagnostic Results", expanded=True):
+                        try:
+                            results = diagnose_approvals_query(shift["id"])
+                            st.json(results)
+                            st.info("📋 Check the logs at /tmp/postgrest_errors.log for detailed error information")
+                        except Exception as diag_err:
+                            st.error(f"Diagnostic failed: {str(diag_err)}")
+
             st.divider()
 
