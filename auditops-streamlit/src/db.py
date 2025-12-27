@@ -8,12 +8,21 @@ import json
 import logging
 import uuid as uuid_lib
 from supabase import Client
-from postgrest.exceptions import APIError
 from src.supabase_client import get_client
 from src.config import (
     SHIFT_STATUS_DRAFT, SHIFT_STATUS_SUBMITTED, SHIFT_STATUS_APPROVED, SHIFT_STATUS_REJECTED,
     PAY_PERIOD_OPEN, PAY_PERIOD_LOCKED
 )
+
+# Try to import postgrest exceptions (optional, for enhanced error logging)
+try:
+    from postgrest.exceptions import APIError
+    POSTGREST_EXCEPTIONS_AVAILABLE = True
+except ImportError:
+    # Fallback: create a dummy APIError class for type hints
+    class APIError(Exception):
+        pass
+    POSTGREST_EXCEPTIONS_AVAILABLE = False
 
 
 # ============================================
