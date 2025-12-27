@@ -63,6 +63,24 @@ FROM pay_periods;
 # Pay periods exist - show selection interface
 st.success(f"✅ **{len(pay_periods)} pay periods loaded**")
 
+# Validate data structure - check if any periods are missing 'id' field
+missing_id_count = sum(1 for p in pay_periods if not p.get("id"))
+if missing_id_count > 0:
+    st.error(f"⚠️ **Database Structure Issue**: {missing_id_count} pay period(s) are missing the 'id' field!")
+    with st.expander("🔧 How to Fix This", expanded=True):
+        st.markdown("""
+        Your pay_periods table is missing the `id` column. This is required for proper functionality.
+
+        **To fix this:**
+        1. Go to **Supabase** → **SQL Editor**
+        2. Run the fix script: `sql_diagnostics/fix_missing_id_column.sql`
+        3. This will add the `id` column and migrate your existing data
+        4. Refresh this page
+
+        **Note**: The app will still work in read-only mode for viewing periods, but you cannot lock periods or view pay items until this is fixed.
+        """)
+    st.markdown("---")
+
 # Summary stats
 open_count = sum(1 for p in pay_periods if p.get("status") == PAY_PERIOD_OPEN)
 locked_count = sum(1 for p in pay_periods if p.get("status") == PAY_PERIOD_LOCKED)
@@ -164,20 +182,41 @@ if len(filtered_periods) < len(pay_periods):
 # Create dropdown options
 period_options = {}
 for p in filtered_periods:
+    # Use id if available, otherwise create unique key from dates
+    period_key = p.get("id")
+    if not period_key:
+        # Fallback: use combination of start_date and end_date as unique identifier
+        period_key = f"{p.get('start_date')}_{p.get('end_date')}"
+
     period_label = f"{format_date(p.get('start_date'))} - {format_date(p.get('end_date'))}"
-    if current_period and p.get("id") == current_period.get("id"):
+
+    # Check if this is the current period
+    is_current = False
+    if current_period:
+        if current_period.get("id") and p.get("id"):
+            is_current = p.get("id") == current_period.get("id")
+        else:
+            # Fallback comparison using dates
+            is_current = (p.get("start_date") == current_period.get("start_date") and
+                         p.get("end_date") == current_period.get("end_date"))
+
+    if is_current:
         period_label = f"⭐ CURRENT: {period_label}"
     elif p.get("status") == PAY_PERIOD_LOCKED:
         period_label = f"🔒 {period_label}"
     else:
         period_label = f"📅 {period_label}"
 
-    period_options[p["id"]] = period_label
+    period_options[period_key] = period_label
 
 # Default to current period if available
 default_index = 0
-if current_period and current_period.get("id") in period_options:
-    default_index = list(period_options.keys()).index(current_period.get("id"))
+if current_period:
+    current_key = current_period.get("id")
+    if not current_key:
+        current_key = f"{current_period.get('start_date')}_{current_period.get('end_date')}"
+    if current_key in period_options:
+        default_index = list(period_options.keys()).index(current_key)
 
 selected_period_id = st.selectbox(
     "Select pay period to view details:",
@@ -190,7 +229,18 @@ st.markdown("---")
 
 # Show selected period details
 if selected_period_id:
-    selected_period = next((p for p in pay_periods if p["id"] == selected_period_id), None)
+    # Find selected period - handle both id-based and date-based keys
+    selected_period = None
+    if "_" in str(selected_period_id):
+        # Date-based key: "start_date_end_date"
+        parts = str(selected_period_id).split("_", 1)
+        if len(parts) == 2:
+            search_start, search_end = parts[0], parts[1]
+            selected_period = next((p for p in pay_periods
+                                   if str(p.get("start_date")) == search_start and str(p.get("end_date")) == search_end), None)
+    else:
+        # ID-based key
+        selected_period = next((p for p in pay_periods if p.get("id") == selected_period_id), None)
 
     if selected_period:
         # Period info
@@ -203,20 +253,34 @@ if selected_period_id:
             st.markdown(f"**Status:** {selected_period.get('status', 'open').upper()}")
 
             # Show if this is the current period
-            if current_period and selected_period.get("id") == current_period.get("id"):
+            is_current_period = False
+            if current_period:
+                if current_period.get("id") and selected_period.get("id"):
+                    is_current_period = selected_period.get("id") == current_period.get("id")
+                else:
+                    # Fallback comparison using dates
+                    is_current_period = (selected_period.get("start_date") == current_period.get("start_date") and
+                                       selected_period.get("end_date") == current_period.get("end_date"))
+            if is_current_period:
                 st.success("⭐ This is the current pay period")
 
         with col2:
             st.subheader("Actions")
             if selected_period.get("status") == PAY_PERIOD_OPEN:
-                if st.button("🔒 Lock Period", type="primary", use_container_width=True, key=f"lock_{selected_period_id}"):
-                    result = lock_pay_period(selected_period_id, use_service_role=True)
+                # Get the actual UUID id for database operations
+                period_db_id = selected_period.get("id")
+                if not period_db_id:
+                    st.error("⚠️ Cannot lock period: Missing ID field. Please run the SQL fix script.")
+                    st.caption("See: sql_diagnostics/fix_missing_id_column.sql")
+                elif st.button("🔒 Lock Period", type="primary", use_container_width=True, key=f"lock_{selected_period_id}"):
+                    result = lock_pay_period(period_db_id, use_service_role=True)
                     if result:
                         st.success("✅ Pay period locked successfully!")
                         st.rerun()
                     else:
                         st.error("❌ Failed to lock period.")
-                st.caption("Lock this period to prevent changes to pay items")
+                if period_db_id:
+                    st.caption("Lock this period to prevent changes to pay items")
             else:
                 st.info("🔒 Period is locked")
                 st.caption("Locked periods cannot be modified")
@@ -225,7 +289,14 @@ if selected_period_id:
 
         # Pay items for this period
         st.subheader("💰 Pay Items")
-        pay_items = get_pay_items_by_period(selected_period_id, use_service_role=True)
+        # Get the actual UUID id for database operations
+        period_db_id = selected_period.get("id")
+        if period_db_id:
+            pay_items = get_pay_items_by_period(period_db_id, use_service_role=True)
+        else:
+            pay_items = []
+            st.warning("⚠️ Cannot load pay items: Missing ID field. Please run the SQL fix script.")
+            st.caption("See: sql_diagnostics/fix_missing_id_column.sql")
 
         if pay_items:
             # Summary

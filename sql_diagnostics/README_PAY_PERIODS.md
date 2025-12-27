@@ -151,6 +151,41 @@ WHERE next_start IS NOT NULL
 
 **Solution**: This is normal if periods already exist. The script skips duplicates.
 
+### Issue: KeyError: "column id does not exist" in Admin Pay Periods page
+
+**Impact**: 🚨 **CRITICAL** - Admin Pay Periods page will crash with KeyError
+
+**Symptoms**:
+- Error message: `KeyError: This app has encountered an error`
+- Traceback shows: `period_options[p["id"]] = period_label`
+- Page shows "130 pay periods loaded" but then crashes
+- Cannot lock periods or view pay items
+
+**Root Cause**: Your `pay_periods` table is missing the `id` UUID column. This happens if:
+1. The table was created before the schema was updated to include `id`
+2. The pay periods were imported from an old data source
+3. The SQL setup script was run on a table with a different structure
+
+**Solution**: Run the fix script to add the missing `id` column:
+
+```bash
+sql_diagnostics/fix_missing_id_column.sql
+```
+
+This script will:
+1. ✅ Check if `id` column exists
+2. ✅ Add `id` column as UUID with auto-generation
+3. ✅ Populate `id` for all existing pay periods
+4. ✅ Set `id` as PRIMARY KEY
+5. ✅ Verify the fix with sample data
+
+**After running the script**:
+1. Refresh the Admin Pay Periods page
+2. The error should be gone
+3. You can now lock periods and view pay items
+
+**Prevention**: The updated `setup_recurring_pay_periods.sql` now includes automatic `id` column creation to prevent this issue in the future.
+
 ### Issue: Pay date is NULL for existing periods
 
 **Solution**: Run this update query:

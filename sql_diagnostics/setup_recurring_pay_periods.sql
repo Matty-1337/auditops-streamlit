@@ -7,19 +7,63 @@
 -- Continues every 14 days indefinitely
 
 -- ============================================
--- STEP 1: Add pay_date column to existing table
+-- STEP 1: Ensure required columns exist
 -- ============================================
+
+-- Enable uuid-ossp extension for UUID generation
+CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
+
+-- Add id column if missing
 DO $$
 BEGIN
-    -- Check if pay_date column exists, add if not
+    IF NOT EXISTS (
+        SELECT 1 FROM information_schema.columns
+        WHERE table_name = 'pay_periods' AND column_name = 'id'
+    ) THEN
+        -- Add id column
+        ALTER TABLE pay_periods ADD COLUMN id UUID DEFAULT uuid_generate_v4();
+        -- Populate existing rows
+        UPDATE pay_periods SET id = uuid_generate_v4() WHERE id IS NULL;
+        -- Make it NOT NULL
+        ALTER TABLE pay_periods ALTER COLUMN id SET NOT NULL;
+        -- Set as primary key (drop existing PK if any)
+        BEGIN
+            ALTER TABLE pay_periods DROP CONSTRAINT IF EXISTS pay_periods_pkey CASCADE;
+        EXCEPTION WHEN OTHERS THEN
+            NULL; -- Ignore error if constraint doesn't exist
+        END;
+        ALTER TABLE pay_periods ADD PRIMARY KEY (id);
+        RAISE NOTICE '✅ Added id column as UUID PRIMARY KEY';
+    ELSE
+        RAISE NOTICE '✅ id column already exists';
+    END IF;
+END $$;
+
+-- Add status column if missing
+DO $$
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1 FROM information_schema.columns
+        WHERE table_name = 'pay_periods' AND column_name = 'status'
+    ) THEN
+        ALTER TABLE pay_periods ADD COLUMN status TEXT NOT NULL DEFAULT 'open';
+        RAISE NOTICE '✅ Added status column to pay_periods table';
+    ELSE
+        RAISE NOTICE '✅ status column already exists';
+    END IF;
+END $$;
+
+-- Add pay_date column if missing
+DO $$
+BEGIN
     IF NOT EXISTS (
         SELECT 1 FROM information_schema.columns
         WHERE table_name = 'pay_periods' AND column_name = 'pay_date'
     ) THEN
         ALTER TABLE pay_periods ADD COLUMN pay_date DATE;
-        RAISE NOTICE 'Added pay_date column to pay_periods table';
+        RAISE NOTICE '✅ Added pay_date column to pay_periods table';
     ELSE
-        RAISE NOTICE 'pay_date column already exists';
+        RAISE NOTICE '✅ pay_date column already exists';
     END IF;
 END $$;
 
