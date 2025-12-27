@@ -51,7 +51,7 @@ except Exception as e:
 
     st.stop()
 
-all_shifts
+# Process shifts to find open_shift and submit_ready_shift
 open_shift = None
 submit_ready_shift = None
 
