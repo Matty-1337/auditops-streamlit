@@ -116,7 +116,7 @@ jobs:
     - name: Check dependencies for security vulnerabilities
       run: |
         # Check for known security vulnerabilities in dependencies
-        pip install -r requirements.txt 2>/dev/null || true
+        pip install -r auditops-streamlit/requirements.txt 2>/dev/null || true
         safety check --json || true
       continue-on-error: true
 
@@ -174,7 +174,7 @@ jobs:
 
     - name: Check Python syntax
       run: |
-        python -m py_compile auditops-streamlit/**/*.py
+        find auditops-streamlit -name "*.py" -type f -exec python -m py_compile {} \;
 
     - name: Try importing main modules
       run: |
