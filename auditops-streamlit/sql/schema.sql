@@ -67,18 +67,24 @@ CREATE INDEX IF NOT EXISTS idx_shifts_check_in ON shifts(check_in);
 -- ============================================
 -- PAY PERIODS TABLE
 -- ============================================
+-- Pay periods run Saturday to Friday (14 days), with pay date the following Friday
+-- Example: Dec 27, 2025 (Sat) - Jan 9, 2026 (Fri) → Pay Date: Jan 16, 2026 (Fri)
 CREATE TABLE IF NOT EXISTS pay_periods (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     start_date DATE NOT NULL,
     end_date DATE NOT NULL,
+    pay_date DATE NOT NULL, -- The Friday when payment is issued (7 days after end_date)
     status TEXT NOT NULL DEFAULT 'open' CHECK (status IN ('open', 'locked')),
     created_at TIMESTAMPTZ DEFAULT NOW(),
     updated_at TIMESTAMPTZ DEFAULT NOW(),
-    UNIQUE(start_date, end_date)
+    UNIQUE(start_date, end_date),
+    CHECK (end_date > start_date),
+    CHECK (pay_date > end_date)
 );
 
 CREATE INDEX IF NOT EXISTS idx_pay_periods_dates ON pay_periods(start_date, end_date);
 CREATE INDEX IF NOT EXISTS idx_pay_periods_status ON pay_periods(status);
+CREATE INDEX IF NOT EXISTS idx_pay_periods_pay_date ON pay_periods(pay_date);
 
 -- ============================================
 -- PAY ITEMS TABLE
