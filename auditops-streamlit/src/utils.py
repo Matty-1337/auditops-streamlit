@@ -156,7 +156,8 @@ def get_client_display_name(client: Optional[dict]) -> str:
     if not client:
         return "—"
     if isinstance(client, dict):
-        return client.get("name", "Unknown")
+        # Try both 'client_name' (database field) and 'name' (mapped field)
+        return client.get("client_name", client.get("name", "Unknown"))
     return str(client)
 
 
@@ -165,6 +166,7 @@ def get_user_display_name(profile: Optional[dict]) -> str:
     if not profile:
         return "—"
     if isinstance(profile, dict):
-        return profile.get("full_name", profile.get("email", "Unknown"))
+        # Try 'name' (app_users field) first, then 'full_name' (profiles field), then fallback to email
+        return profile.get("name", profile.get("full_name", profile.get("email", "Unknown")))
     return str(profile)
 
