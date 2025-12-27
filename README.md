@@ -1,5 +1,9 @@
 # AuditOps - Streamlit Operations Portal
 
+[![CI/CD - Tests & Linting](https://github.com/Matty-1337/auditops-streamlit/actions/workflows/test.yml/badge.svg)](https://github.com/Matty-1337/auditops-streamlit/actions/workflows/test.yml)
+[![Python 3.10+](https://img.shields.io/badge/python-3.10+-blue.svg)](https://www.python.org/downloads/)
+[![Code style: black](https://img.shields.io/badge/code%20style-black-000000.svg)](https://github.com/psf/black)
+
 A comprehensive operations portal for auditors, administrators, and managers built with Streamlit and Supabase. This internal employee and client operations system provides role-based access control, time tracking, pay period management, approvals, and client data access.
 
 ## ⚠️ IMPORTANT: Production Structure
