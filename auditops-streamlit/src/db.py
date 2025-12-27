@@ -3,12 +3,97 @@ Database CRUD operations for all entities.
 """
 from typing import List, Dict, Optional
 from datetime import datetime, date
+from functools import wraps
+import json
+import logging
+import uuid as uuid_lib
 from supabase import Client
+from postgrest.exceptions import APIError
 from src.supabase_client import get_client
 from src.config import (
     SHIFT_STATUS_DRAFT, SHIFT_STATUS_SUBMITTED, SHIFT_STATUS_APPROVED, SHIFT_STATUS_REJECTED,
     PAY_PERIOD_OPEN, PAY_PERIOD_LOCKED
 )
+
+
+# ============================================
+# ERROR LOGGING & MONITORING
+# ============================================
+
+def log_postgrest_errors(func):
+    """
+    Decorator to capture and log full PostgREST errors before Streamlit redacts them.
+
+    This helps diagnose issues by preserving the original error details that would
+    otherwise be hidden by Streamlit's security redaction.
+    """
+    @wraps(func)
+    def wrapper(*args, **kwargs):
+        try:
+            return func(*args, **kwargs)
+        except APIError as e:
+            # Extract all available error information
+            error_info = {
+                "function": func.__name__,
+                "args": [str(a)[:100] for a in args],  # Truncate to avoid logging huge objects
+                "kwargs": {k: str(v)[:100] for k, v in kwargs.items()},
+                "error_type": type(e).__name__,
+                "error_str": str(e),
+                "error_args": e.args if hasattr(e, 'args') else None,
+            }
+
+            # Try to extract response details
+            if hasattr(e, 'message'):
+                error_info["message"] = e.message
+            if hasattr(e, 'details'):
+                error_info["details"] = e.details
+            if hasattr(e, 'hint'):
+                error_info["hint"] = e.hint
+            if hasattr(e, 'code'):
+                error_info["code"] = e.code
+
+            logging.error(f"[PostgREST Error] {json.dumps(error_info, indent=2, default=str)}")
+
+            # Write to file for Streamlit Cloud inspection
+            try:
+                with open("/tmp/postgrest_errors.log", "a") as f:
+                    f.write(json.dumps(error_info, default=str) + "\n")
+            except Exception:
+                pass
+
+            # Re-raise the original exception
+            raise
+        except Exception as e:
+            # Log non-APIError exceptions too
+            logging.exception(f"[DB Error in {func.__name__}] {type(e).__name__}: {str(e)}")
+            raise
+    return wrapper
+
+
+def track_api_errors(func):
+    """
+    Decorator to track API errors for monitoring/alerting.
+    Can be extended to send to Sentry, CloudWatch, etc.
+    """
+    @wraps(func)
+    def wrapper(*args, **kwargs):
+        try:
+            return func(*args, **kwargs)
+        except Exception as e:
+            # Log for monitoring (extend this to push to your monitoring service)
+            logging.error(
+                f"[MONITOR] API Error in {func.__name__}: {type(e).__name__}",
+                extra={
+                    "function": func.__name__,
+                    "error_type": type(e).__name__,
+                    "args_count": len(args),
+                }
+            )
+            # TODO: Uncomment and configure when monitoring service is set up
+            # import sentry_sdk
+            # sentry_sdk.capture_exception(e)
+            raise
+    return wrapper
 
 
 # ============================================
@@ -465,71 +550,138 @@ def create_pay_items_bulk(items: List[Dict], use_service_role: bool = True) -> L
 # APPROVALS
 # ============================================
 
+@log_postgrest_errors
+@track_api_errors
 def get_approval(approval_id: str) -> Optional[Dict]:
-    """Get approval by ID."""
-    import logging
-    client = get_client(service_role=True)
+    """
+    Get approval by ID with manually fetched related data.
 
-    # Get approval without joins first (more reliable)
-    response = client.table("approvals").select("*").eq("id", approval_id).execute()
-    if not response.data:
+    Fetches approval from database and enriches it with approver and shift data.
+    Uses manual fetches instead of foreign key joins to avoid broken relationship errors.
+
+    Args:
+        approval_id: The approval ID to retrieve
+
+    Returns:
+        Approval dict with nested 'approver' and 'shift' data, or None if not found
+    """
+    # Validate input
+    if not approval_id or not isinstance(approval_id, str):
+        logging.warning(f"[DB] Invalid approval_id: {approval_id}")
         return None
 
-    approval = response.data[0]
-
-    # Manually fetch approver from app_users table
-    if approval.get('approver_id'):
-        try:
-            approver_response = client.table("app_users").select("id, name, email, phone, role").eq("auth_uuid", approval['approver_id']).execute()
-            if approver_response.data and len(approver_response.data) > 0:
-                approval['approver'] = approver_response.data[0]
-            else:
-                approval['approver'] = None
-                logging.warning(f"[DB] No approver found for UUID {approval['approver_id']}")
-        except Exception as approver_err:
-            logging.warning(f"[DB] Could not fetch approver {approval['approver_id']}: {approver_err}")
-            approval['approver'] = None
-
-    # Manually fetch shift data
-    if approval.get('shift_id'):
-        try:
-            shift_response = client.table("shifts").select("*").eq("id", approval['shift_id']).execute()
-            if shift_response.data and len(shift_response.data) > 0:
-                approval['shift'] = shift_response.data[0]
-            else:
-                approval['shift'] = None
-        except Exception as shift_err:
-            logging.warning(f"[DB] Could not fetch shift {approval['shift_id']}: {shift_err}")
-            approval['shift'] = None
-
-    return approval
-
-
-def get_approvals_by_shift(shift_id: str) -> List[Dict]:
-    """Get approvals for a shift."""
-    import logging
     client = get_client(service_role=True)
 
-    # Get approvals without joins first (more reliable)
-    response = client.table("approvals").select("*").eq("shift_id", shift_id).order("created_at", desc=True).execute()
-    approvals = response.data or []
-    logging.info(f"[DB] Got {len(approvals)} approvals for shift {shift_id}")
+    try:
+        # Get approval without joins first (more reliable)
+        response = client.table("approvals").select("*").eq("id", approval_id).execute()
+        if not response.data:
+            logging.info(f"[DB] No approval found for id={approval_id}")
+            return None
 
-    # Manually fetch approver data for each approval
-    for approval in approvals:
+        approval = response.data[0]
+        logging.info(f"[DB] Retrieved approval {approval_id}")
+
+        # Manually fetch approver from app_users table
         if approval.get('approver_id'):
             try:
                 approver_response = client.table("app_users").select("id, name, email, phone, role").eq("auth_uuid", approval['approver_id']).execute()
                 if approver_response.data and len(approver_response.data) > 0:
                     approval['approver'] = approver_response.data[0]
+                    logging.debug(f"[DB] Fetched approver data for {approval['approver_id']}")
                 else:
                     approval['approver'] = None
-                    logging.warning(f"[DB] No approver found for UUID {approval['approver_id']}")
+                    logging.warning(f"[DB] No approver found in app_users for UUID {approval['approver_id']}")
             except Exception as approver_err:
                 logging.warning(f"[DB] Could not fetch approver {approval['approver_id']}: {approver_err}")
                 approval['approver'] = None
 
-    return approvals
+        # Manually fetch shift data
+        if approval.get('shift_id'):
+            try:
+                shift_response = client.table("shifts").select("*").eq("id", approval['shift_id']).execute()
+                if shift_response.data and len(shift_response.data) > 0:
+                    approval['shift'] = shift_response.data[0]
+                    logging.debug(f"[DB] Fetched shift data for {approval['shift_id']}")
+                else:
+                    approval['shift'] = None
+                    logging.warning(f"[DB] No shift found for id {approval['shift_id']}")
+            except Exception as shift_err:
+                logging.warning(f"[DB] Could not fetch shift {approval['shift_id']}: {shift_err}")
+                approval['shift'] = None
+
+        return approval
+
+    except Exception as e:
+        logging.exception(f"[DB] get_approval failed for approval_id={approval_id}")
+        return None
+
+
+@log_postgrest_errors
+@track_api_errors
+def get_approvals_by_shift(shift_id: str, limit: int = 100) -> List[Dict]:
+    """
+    Get approvals for a shift with manually fetched approver data.
+
+    Fetches approvals from the database and manually enriches with approver data
+    from app_users table to avoid broken foreign key joins to profiles table.
+
+    Args:
+        shift_id: The shift ID to get approvals for
+        limit: Maximum number of approvals to return (default 100, prevents huge payloads)
+
+    Returns:
+        List of approval dicts with nested 'approver' data, or empty list on error
+    """
+    # Validate input
+    if not shift_id or not isinstance(shift_id, str):
+        logging.warning(f"[DB] Invalid shift_id: {shift_id}")
+        return []
+
+    # Validate shift_id format (if it should be a UUID)
+    try:
+        uuid_lib.UUID(shift_id)
+    except (ValueError, AttributeError, TypeError):
+        # Not a UUID - could be integer or other format
+        # Log for debugging but continue (some systems use int IDs)
+        logging.debug(f"[DB] shift_id {shift_id} is not a UUID format")
+
+    client = get_client(service_role=True)
+
+    try:
+        # Get approvals without joins first (more reliable)
+        # Add limit to prevent huge payloads
+        response = client.table("approvals").select("*").eq("shift_id", shift_id).order("created_at", desc=True).limit(limit).execute()
+        approvals = response.data or []
+        logging.info(f"[DB] Got {len(approvals)} approvals for shift {shift_id}")
+
+        # Manually fetch approver data for each approval
+        for approval in approvals:
+            if approval.get('approver_id'):
+                try:
+                    # Query app_users by auth_uuid (not profiles table)
+                    approver_response = client.table("app_users").select("id, name, email, phone, role").eq("auth_uuid", approval['approver_id']).execute()
+                    if approver_response.data and len(approver_response.data) > 0:
+                        approval['approver'] = approver_response.data[0]
+                        logging.debug(f"[DB] Fetched approver {approval['approver_id']}")
+                    else:
+                        approval['approver'] = None
+                        logging.warning(f"[DB] No approver found in app_users for UUID {approval['approver_id']}")
+                except Exception as approver_err:
+                    logging.warning(f"[DB] Could not fetch approver {approval['approver_id']}: {approver_err}")
+                    approval['approver'] = None
+            else:
+                approval['approver'] = None
+
+        return approvals
+
+    except Exception as e:
+        # Log full error details for diagnosis
+        logging.exception(f"[DB] get_approvals_by_shift failed for shift_id={shift_id}")
+
+        # Return empty list rather than crashing the app
+        # The UI will show "No previous decisions" which is acceptable fallback
+        return []
 
 
 def create_approval(shift_id: str, approver_id: str, decision: str, notes: Optional[str] = None, use_service_role: bool = True) -> Optional[Dict]:
@@ -548,6 +700,142 @@ def create_approval(shift_id: str, approver_id: str, decision: str, notes: Optio
         update_shift(shift_id, {"status": new_status}, use_service_role=use_service_role)
         return response.data[0]
     return None
+
+
+def diagnose_approvals_query(shift_id: str) -> Dict:
+    """
+    Run progressive query tests to isolate approval query failures.
+
+    This diagnostic function tests various query patterns to identify
+    the exact cause of APIErrors when fetching approvals.
+
+    Args:
+        shift_id: The shift ID to test queries against
+
+    Returns:
+        Dict with test results for each query variant
+    """
+    client = get_client(service_role=True)
+    results = {}
+
+    # Test 1: Minimal query (no joins, no order)
+    try:
+        response = client.table("approvals").select("*").eq("shift_id", shift_id).limit(1).execute()
+        results["test_1_minimal"] = {
+            "status": "✅ PASS",
+            "rows": len(response.data),
+            "description": "Basic query without joins or ordering"
+        }
+    except APIError as e:
+        results["test_1_minimal"] = {
+            "status": "❌ FAIL",
+            "error": str(e.args),
+            "description": "Basic query without joins or ordering"
+        }
+
+    # Test 2: With profiles join (expected to fail if FK is broken)
+    try:
+        response = client.table("approvals").select("*, approver:profiles(*)").eq("shift_id", shift_id).limit(1).execute()
+        results["test_2_profiles_join"] = {
+            "status": "✅ PASS",
+            "rows": len(response.data),
+            "description": "Query with approver:profiles(*) join"
+        }
+    except APIError as e:
+        results["test_2_profiles_join"] = {
+            "status": "❌ FAIL",
+            "error": str(e.args),
+            "description": "Query with approver:profiles(*) join - FK likely broken"
+        }
+
+    # Test 3: Explicit profile fields (smaller payload)
+    try:
+        response = client.table("approvals").select("*, approver:profiles(id,full_name,email)").eq("shift_id", shift_id).limit(1).execute()
+        results["test_3_explicit_fields"] = {
+            "status": "✅ PASS",
+            "rows": len(response.data),
+            "description": "Query with explicit profile fields"
+        }
+    except APIError as e:
+        results["test_3_explicit_fields"] = {
+            "status": "❌ FAIL",
+            "error": str(e.args),
+            "description": "Query with explicit profile fields"
+        }
+
+    # Test 4: Manual fetch from app_users (recommended approach)
+    try:
+        response = client.table("approvals").select("*").eq("shift_id", shift_id).limit(1).execute()
+        if response.data:
+            approval = response.data[0]
+            approver_id = approval.get('approver_id')
+            # Try to fetch from app_users
+            user_response = client.table("app_users").select("*").eq("auth_uuid", approver_id).execute()
+            results["test_4_app_users_manual"] = {
+                "status": "✅ PASS",
+                "approver_found": len(user_response.data) > 0,
+                "description": "Manual fetch from app_users table"
+            }
+        else:
+            results["test_4_app_users_manual"] = {
+                "status": "⏭️ SKIPPED",
+                "reason": "No approvals found for this shift",
+                "description": "Manual fetch from app_users table"
+            }
+    except Exception as e:
+        results["test_4_app_users_manual"] = {
+            "status": "❌ FAIL",
+            "error": str(e),
+            "description": "Manual fetch from app_users table"
+        }
+
+    # Test 5: Check for type mismatch (UUID vs int)
+    try:
+        # Check if shift_id looks like a UUID
+        is_uuid = False
+        try:
+            uuid_lib.UUID(shift_id)
+            is_uuid = True
+        except (ValueError, AttributeError):
+            pass
+
+        if is_uuid:
+            response = client.table("approvals").select("*").eq("shift_id", shift_id).limit(1).execute()
+            results["test_5_type_check"] = {
+                "status": "✅ PASS",
+                "shift_id_type": "UUID",
+                "description": "Shift ID type validation"
+            }
+        else:
+            results["test_5_type_check"] = {
+                "status": "ℹ️ INFO",
+                "shift_id_type": "Non-UUID (possibly integer or string)",
+                "description": "Shift ID type validation"
+            }
+    except Exception as e:
+        results["test_5_type_check"] = {
+            "status": "❌ FAIL",
+            "error": str(e),
+            "description": "Shift ID type validation"
+        }
+
+    # Test 6: Without order clause to test if ordering triggers error
+    try:
+        response = client.table("approvals").select("*").eq("shift_id", shift_id).execute()
+        results["test_6_no_ordering"] = {
+            "status": "✅ PASS",
+            "rows": len(response.data),
+            "description": "Query without order clause"
+        }
+    except APIError as e:
+        results["test_6_no_ordering"] = {
+            "status": "❌ FAIL",
+            "error": str(e.args),
+            "description": "Query without order clause"
+        }
+
+    logging.info(f"[DIAGNOSTIC] Approval query test results:\n{json.dumps(results, indent=2, default=str)}")
+    return results
 
 
 # ============================================
