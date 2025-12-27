@@ -1,0 +1,28 @@
+# Testing dependencies for AuditOps Streamlit
+# Install with: pip install -r requirements-test.txt
+
+# Core testing framework
+pytest>=7.4.0
+pytest-cov>=4.1.0
+pytest-xdist>=3.3.1  # Parallel test execution
+pytest-timeout>=2.1.0  # Timeout for hanging tests
+pytest-mock>=3.11.1  # Mocking support
+
+# Code quality and linting
+black>=23.7.0  # Code formatting
+isort>=5.12.0  # Import sorting
+flake8>=6.1.0  # Linting
+pylint>=2.17.5  # Advanced linting
+mypy>=1.5.0  # Type checking
+
+# Security scanning
+bandit>=1.7.5  # Security issue scanner
+safety>=2.3.5  # Dependency vulnerability checker
+
+# Coverage reporting
+coverage[toml]>=7.3.0
+
+# Testing utilities
+responses>=0.23.3  # Mock HTTP requests
+freezegun>=1.2.2  # Mock datetime
+faker>=19.6.2  # Generate fake data for tests

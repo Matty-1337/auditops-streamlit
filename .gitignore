@@ -49,11 +49,25 @@ Thumbs.db
 *.pdf
 !requirements.txt
 
+# Testing
+.pytest_cache/
+.coverage
+coverage.xml
+htmlcov/
+.tox/
+.hypothesis/
+*.cover
+*.coverage.*
+.cache
+nosetests.xml
+coverage/
+junit.xml
+test-results/
 
-__pycache__/
-*.pyc
-.venv/
-venv/
-.env
-.streamlit/secrets.toml
+# MyPy
+.mypy_cache/
+.dmypy.json
+dmypy.json
 
+# Ruff
+.ruff_cache/
