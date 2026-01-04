@@ -943,12 +943,19 @@ def get_client_secrets(client_id: str) -> Optional[Dict]:
     """Get client secrets by client_id. Auditors need access to site information."""
     client = get_client(service_role=True)  # Use service role so auditors can access
     try:
+        # Get secrets from client_secrets table
         response = client.table("client_secrets").select(
-            "wifi_name, wifi_password, alarm_code, lockbox_code, patio_code, other_site_notes"
+            "wifi_name, wifi_password, alarm_code, lockbox_code, other_site_notes"
         ).eq("client_id", client_id).limit(1).execute()
-        if response.data:
-            return response.data[0]
-        return None
+        
+        secrets = response.data[0] if response.data else {}
+        
+        # Also get patio_code from clients table (it's stored there, not in client_secrets)
+        client_response = client.table("clients").select("patio_code").eq("client_id", client_id).limit(1).execute()
+        if client_response.data and client_response.data[0].get("patio_code"):
+            secrets["patio_code"] = client_response.data[0].get("patio_code")
+        
+        return secrets if secrets else None
     except Exception:
         return None
 
