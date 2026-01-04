@@ -944,7 +944,7 @@ def get_client_secrets(client_id: str) -> Optional[Dict]:
     client = get_client(service_role=True)  # Use service role so auditors can access
     try:
         response = client.table("client_secrets").select(
-            "wifi_name, wifi_password, alarm_code, lockbox_code, other_site_notes"
+            "wifi_name, wifi_password, alarm_code, lockbox_code, patio_code, other_site_notes"
         ).eq("client_id", client_id).limit(1).execute()
         if response.data:
             return response.data[0]

@@ -165,6 +165,8 @@ else:
                             st.markdown(f"**🚨 Alarm Code:** {secrets.get('alarm_code')}")
                         if secrets.get("lockbox_code"):
                             st.markdown(f"**🔒 Lockbox Code:** {secrets.get('lockbox_code')}")
+                        if secrets.get("patio_code"):
+                            st.markdown(f"**🏡 PATIO CODE:** {secrets.get('patio_code')}")
                         if secrets.get("wifi_name"):
                             st.markdown(f"**📶 WiFi:** {secrets.get('wifi_name')}")
                         if secrets.get("wifi_password"):
