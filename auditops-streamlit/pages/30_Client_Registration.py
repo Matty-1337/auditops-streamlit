@@ -42,6 +42,7 @@ with st.form("client_registration"):
     with col2:
         lockbox_code = st.text_input("Lock Box Code", placeholder="9012", help="Numbers only")
         cage_lock_code = st.text_input("CAGE LOCK/PAD LOCK", placeholder="3456", help="Numbers only")
+        patio_code = st.text_input("PATIO CODE", placeholder="7890", help="Numbers only")
 
     # Audit Day
     st.markdown("### Audit Schedule")
@@ -82,6 +83,7 @@ with st.form("client_registration"):
                     "lockbox_code": lockbox_code if lockbox_code else None,
                     "code_for_lights": code_for_lights if code_for_lights else None,
                     "cage_lock_code": cage_lock_code if cage_lock_code else None,
+                    "patio_code": patio_code if patio_code else None,
                     "audit_day": audit_day if audit_day else None,
                     "special_instructions": special_instructions if special_instructions else None,
                     "active": False,  # Not active until approved

@@ -228,7 +228,7 @@ def get_all_clients(active_only: bool = True) -> List[Dict]:
     - active (boolean)
     - address, contact_person, contact_email, contact_phone
     - wifi_name, wifi_password, special_instructions
-    - alarm_code, lockbox_code, code_for_lights, cage_lock_code
+    - alarm_code, lockbox_code, code_for_lights, cage_lock_code, patio_code
     - audit_day
     """
     client = get_client(service_role=True)
@@ -259,6 +259,7 @@ def get_all_clients(active_only: bool = True) -> List[Dict]:
             "lockbox_code": row.get("lockbox_code"),
             "code_for_lights": row.get("code_for_lights"),
             "cage_lock_code": row.get("cage_lock_code"),
+            "patio_code": row.get("patio_code"),
             "audit_day": row.get("audit_day"),
             "special_instructions": row.get("special_instructions")
         })

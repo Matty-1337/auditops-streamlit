@@ -149,6 +149,11 @@ if open_shift:
                     else:
                         st.markdown("🔐 **CAGE LOCK/PAD LOCK:** None")
 
+                    if client_detail.get('patio_code'):
+                        st.markdown(f"🏡 **PATIO CODE:** {client_detail.get('patio_code')}")
+                    else:
+                        st.markdown("🏡 **PATIO CODE:** None")
+
     st.markdown("---")
 
     # Check out button

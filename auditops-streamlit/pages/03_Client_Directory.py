@@ -103,7 +103,8 @@ else:
                     client.get('alarm_code'),
                     client.get('lockbox_code'),
                     client.get('code_for_lights'),
-                    client.get('cage_lock_code')
+                    client.get('cage_lock_code'),
+                    client.get('patio_code')
                 ])
                 if has_codes:
                     st.markdown("---")
@@ -116,6 +117,8 @@ else:
                         st.write(f"💡 Code for Lights: {client.get('code_for_lights')}")
                     if client.get('cage_lock_code'):
                         st.write(f"🔐 CAGE LOCK/PAD LOCK: {client.get('cage_lock_code')}")
+                    if client.get('patio_code'):
+                        st.write(f"🏡 PATIO CODE: {client.get('patio_code')}")
 
                 # Audit Schedule
                 if client.get('audit_day'):
